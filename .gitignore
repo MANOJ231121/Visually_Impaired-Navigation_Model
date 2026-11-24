@@ -41,9 +41,9 @@ data/
 # ---------------------------------------------------------------------------
 # Training / evaluation / prediction outputs
 # ---------------------------------------------------------------------------
-runs/
-!runs/
+runs/*
 !runs/detect/
+runs/detect/*
 !runs/detect/yolo11s_custom/
 !runs/detect/yolo11s_custom/**
 evaluation/results/*
@@ -61,6 +61,8 @@ outputs/
 # Model weights and exported models
 # ---------------------------------------------------------------------------
 *.pt
+!models/**
+!models/**/*.pt
 !runs/detect/yolo11s_custom/weights/*.pt
 !yolo11s.pt
 *.pth
