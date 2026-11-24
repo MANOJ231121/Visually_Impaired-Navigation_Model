@@ -679,6 +679,27 @@ Renaming only affects display text. It does not change trained weights.
 
 ---
 
+## Trained YOLO11s Results
+
+The project has been upgraded to **Ultralytics YOLO11s (Small)** using transfer learning from `yolo11s.pt` on the full 35-class dataset (11,526 train, 2,982 val, 795 test images). Training was accelerated on an **NVIDIA GeForce RTX 3050 Laptop GPU** with CUDA 12.1.
+
+### Model Weights Location
+- **Best Weights**: `runs/detect/yolo11s_custom/weights/best.pt` (19.2 MB)
+- **Last Weights**: `runs/detect/yolo11s_custom/weights/last.pt` (19.2 MB)
+- **Training Artifacts**: `runs/detect/yolo11s_custom/` (includes `results.csv`, `results.png`, batch previews)
+- **Evaluation Curves & Metrics**: `evaluation/results/yolo11s_custom/` (includes `confusion_matrix.png`, `BoxPR_curve.png`, `per_class.csv`)
+
+### Performance Comparison: YOLO11s vs. YOLO11n Baseline
+
+| Model | Split | Images | Instances | Precision (P) | Recall (R) | mAP50 | mAP50-95 | Weights Path |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **YOLO11s (Custom)** | **val** | **2,982** | **4,408** | **0.6527** | **0.6070** | **0.6514** | **0.4408** | `runs/detect/yolo11s_custom/weights/best.pt` |
+| **YOLO11s (Custom)** | **test** | **795** | **1,220** | **0.6266** | **0.6088** | **0.6427** | **0.4476** | `runs/detect/yolo11s_custom/weights/best.pt` |
+| YOLO11n (Baseline) | val | 2,982 | 4,408 | 0.8463 | 0.7745 | 0.8343 | 0.6323 | `runs/full_yolo11n_640_v3/weights/best.pt` |
+| YOLO11n (Baseline) | test | 795 | 1,220 | 0.8425 | 0.7940 | 0.8470 | 0.6465 | `runs/full_yolo11n_640_v3/weights/best.pt` |
+
+---
+
 ## Baseline results
 
 These metrics come from the original YOLO11n experiment
