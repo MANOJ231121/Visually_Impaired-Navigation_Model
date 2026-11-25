@@ -1,0 +1,5 @@
+﻿frame,source,class_id,class_name,confidence,x1,y1,x2,y2
+2,sample_video.mp4,34,class_34,0.8084,1.0,0.0,329.6,220.0
+4,sample_video.mp4,23,class_23,0.8914,77.3,66.3,254.7,172.9
+7,sample_video.mp4,34,class_34,0.8084,1.0,0.0,329.6,220.0
+9,sample_video.mp4,23,class_23,0.8938,77.3,66.3,254.2,172.9

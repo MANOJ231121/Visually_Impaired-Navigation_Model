@@ -7,9 +7,13 @@ a prediction script that works on images, folders, video, and webcams, and a
 demo assistive-navigation app that speaks short guidance such as
 "Person, 20 metres ahead, moving left."
 
-The dataset is intentionally **not** committed to this repository. This working
-folder already has it at `model_training/dataset/`; `data.yaml` points there, so
-the scripts find it automatically.
+The dataset is intentionally **not** committed to this repository. Download
+it separately (see below), extract it next to `data.yaml`, and the scripts will
+find it automatically. This working copy already has it at
+`model_training/dataset/`; `data.yaml` points there, so the scripts find it
+automatically.
+
+**Original dataset:** https://drive.google.com/file/d/1NFMPXsI8RGnXomLqamtXp0iCXGoQZZks/view?usp=sharing
 
 ---
 
