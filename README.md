@@ -704,8 +704,9 @@ by default, so the prototype works immediately without retraining. Pass another
 
 `run_full_assistive_nav.bat` also passes `--distance 20 --position ahead`, so
 the spoken sentence is predictable for a presentation:
-`"<object> detected about 20 metres ahead."` The on-screen estimate stays
-honest; only the spoken guidance is forced. Remove those two arguments from the
+`"<object> detected about 20 metres ahead."` Both the HUD label and the spoken
+guidance are forced for a predictable presentation; the 20 m value is a demo
+override, not a calibrated measurement. Remove those two arguments from the
 .bat file to return to camera-based distance and direction.
 
 Press **q** in the preview window to quit.
@@ -1008,9 +1009,10 @@ The written report is kept in `report/`:
 | `report/Project_Report_Updated.pdf` | PDF export of the updated report |
 | `report/figures/` | Class-index, class-distribution and YOLO11n result figures |
 
-The updated report adds recent research, a YOLO11n/s/m accuracy comparison,
-and collaborative-training notes. Metrics that were not supplied are marked
-**PENDING** instead of being invented.
+The updated report adds recent research, completed YOLO11n/s/m validation
+results, the final DroidCam voice-prototype notes, and collaborative-training
+details. Test metrics that were not supplied are marked **PENDING** instead of
+being invented.
 
 ---
 

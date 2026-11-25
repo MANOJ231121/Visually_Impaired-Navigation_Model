@@ -21,15 +21,18 @@ groups were collapsed, leaving 15,303 images and 21,944 boxes.
 
 A YOLO11n model, pre-trained on COCO, was fine-tuned for 60 epochs at 640 × 640 on a laptop RTX 4050
 GPU in 1.89 hours. On the untouched test split it reached precision 0.843, recall 0.794, mAP@50
-0.847 and mAP@50-95 0.647, with all 35 classes evaluated individually. The same cleaned dataset and
-training protocol were adopted for YOLO11s and YOLO11m by teammates so that accuracy can be compared
-across model scales; Sections 6.5 and 7.5 give the shared protocol and the comparison table, with the
-YOLO11s and YOLO11m metric cells marked **PENDING** until those checkpoints are evaluated. The best
-YOLO11n weights were exported to ONNX (10.2 MB, verified) and run at about 0.04 s per frame on CPU.
-Three tools were built on top of the model: a batch image predictor that writes annotated images and
-a CSV of boxes, a class inspection tool that crops real examples of any class ID, and a live webcam
-demo. Names appear in the tables, figures and model output, while the numeric IDs remain the
-authoritative labels.
+0.847 and mAP@50-95 0.647, with all 35 classes evaluated individually. The same cleaned dataset was
+used for teammate-trained YOLO11s and YOLO11m checkpoints. Their supplied validation results are
+precision 0.8786, recall 0.8178, mAP@50 0.8719 and mAP@50-95 0.6800 for YOLO11s, and 0.539, 0.471,
+0.500 and 0.317 for YOLO11m. The corresponding held-out test values were not supplied and remain
+**PENDING**, so no test-split winner is claimed. Sections 6.5 and 7.5 give the completed training
+protocols, the validation comparison and the pending test cells. The best YOLO11n weights were
+exported to ONNX (10.2 MB, verified) and run at about 0.04 s per frame on CPU, while the higher
+accuracy YOLO11s checkpoint was used directly in the final DroidCam voice prototype without
+retraining. Three tools were built on top of the model: a batch image predictor that writes
+annotated images and a CSV of boxes, a class inspection tool that crops real examples of any class
+ID, and a live webcam demo. Names appear in the tables, figures and model output, while the numeric
+IDs remain the authoritative labels.
 
 # Contents {.unnumbered}
 
@@ -48,6 +51,7 @@ authoritative labels.
 9.  Application Development
 10. Results and Discussion
     - 10.7 Interpreting the model-scale comparison
+    - 10.8 Result figures, workflow diagrams and launchers
 11. Limitations
 12. Conclusion and Future Scope
 13. References
@@ -562,26 +566,27 @@ new classes and the backbone is adjusting at the same time. By epoch 20 the scor
 
 ## 6.5 Collaborative training of YOLO11s and YOLO11m
 
-To avoid confusing model size with data quality, the YOLO11s and YOLO11m experiments are being run by
-teammates on the same derived dataset, the same 640 × 640 input and the same schedule used for
-YOLO11n. The table records the planned protocol. The **PENDING** entries are intentional: they mark
-results that must be filled from the actual run folders rather than estimated from COCO numbers or
-from the nano result.
+To avoid confusing model size with data quality, the YOLO11s and YOLO11m experiments were run by
+teammates on the same derived dataset and the same 640 × 640 input, although their schedules differ:
+YOLO11s used the full 60-epoch schedule, while YOLO11m was trained for one epoch on a 4 GB laptop GPU.
+The table records the completed protocol taken from the supplied model documentation. The remaining
+**PENDING** entries apply only to the held-out test split, not to training or validation.
 
 | Model | Trained by | Status | Epochs | Img size | Batch | Device | Checkpoint |
 |:--|:--|:--|--:|--:|--:|:--|:--|
 | YOLO11n | This project | Complete | 60 | 640 | 16 | RTX 4050 Laptop 6 GB | `runs/full_yolo11n_640_v3/weights/best.pt` |
-| YOLO11s | Teammate | **PENDING** final metrics | 60 | 640 | 16 | As recorded in teammate's `args.yaml` | **PENDING** |
-| YOLO11m | Teammate | **PENDING** final metrics | 60 | 640 | 16 | As recorded in teammate's `args.yaml` | **PENDING** |
+| YOLO11s | Teammate | Complete | 60 (55 cosine fine-tune) | 640 | 8 | RTX 3050 Laptop 4 GB | `models/YOLO11s/best.pt` |
+| YOLO11m | Teammate | Complete | 1 | 640 | 4 | RTX 3050 Laptop 4 GB | `models/YOLO11m/best.pt` |
 
-Table 7a. Shared training protocol for the three model scales. The exact device, runtime and best
-checkpoint for YOLO11s and YOLO11m should be copied from their own Ultralytics `args.yaml` files.
+Table 7a. Completed training protocol for the three model scales. YOLO11s also used a ten-epoch
+mosaic close; YOLO11m trained in 14.1 minutes with AMP enabled.
 
-The evaluation protocol is also shared: validation drives checkpoint selection and early stopping,
-and the held-out test split is evaluated once on each best checkpoint. Precision, recall and F1 are
-reported at the chosen operating threshold, while mAP@50 and mAP@50-95 come from the standard
-validation procedure so that the three models can be compared fairly (Ultralytics performance-metric
-guidance, 2024).
+The evaluation protocol is shared: validation drives checkpoint selection, and the held-out test
+split is intended to be evaluated once on each best checkpoint. Precision, recall and F1 are reported
+at the chosen operating threshold, while mAP@50 and mAP@50-95 come from the standard validation
+procedure so that the three models can be compared fairly (Ultralytics performance-metric guidance,
+2024). Validation metrics are now available for all three models; test metrics for the teammate
+checkpoints remain **PENDING** because they were not supplied.
 
 # 7. Performance Evaluation
 
@@ -650,19 +655,31 @@ to the training framework.
 
 ## 7.5 Model-scale accuracy comparison
 
-The table below is the single comparison point for the three scales. Only the YOLO11n row is filled
-because that is the only completed and verified run at the time of writing. The YOLO11s and YOLO11m
-rows must be completed from each teammate's `model.val()` output on the same cleaned `data.yaml`;
-they should not be copied from COCO tables or from a different split.
+The table below compares all three scales on the same cleaned **validation** split (2,982 images and
+4,408 boxes), using the values supplied with each checkpoint. This is the only complete three-model
+comparison currently available. YOLO11s gives the strongest validation result, YOLO11n remains a
+competitive low-power baseline, and YOLO11m is clearly under-trained because its checkpoint comes
+from a single epoch.
+
+| Model | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 | Result source |
+|:--|--:|--:|--:|--:|--:|--:|:--|
+| YOLO11n | 2,982 | 4,408 | 0.8463 | 0.7745 | 0.8343 | 0.6323 | This project, validation split |
+| YOLO11s | 2,982 | 4,408 | 0.8786 | 0.8178 | 0.8719 | 0.6800 | Teammate checkpoint, validation split |
+| YOLO11m | 2,982 | 4,408 | 0.5390 | 0.4710 | 0.5000 | 0.3170 | Teammate checkpoint, validation split |
+
+Table 7b. Validation accuracy comparison on the cleaned split. All three rows use the same images,
+image size, class IDs and evaluation protocol.
+
+The held-out test split (795 images and 1,220 boxes) was evaluated for YOLO11n only. The teammate
+test values were not supplied and are left visible rather than estimated.
 
 | Model | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 | Result source |
 |:--|--:|--:|--:|--:|--:|--:|:--|
 | YOLO11n | 795 | 1,220 | 0.843 | 0.794 | 0.847 | 0.647 | This project, test split |
-| YOLO11s | 795 | 1,220 | **PENDING** | **PENDING** | **PENDING** | **PENDING** | Teammate's test evaluation |
-| YOLO11m | 795 | 1,220 | **PENDING** | **PENDING** | **PENDING** | **PENDING** | Teammate's test evaluation |
+| YOLO11s | 795 | 1,220 | **PENDING** | **PENDING** | **PENDING** | **PENDING** | Teammate's test evaluation not supplied |
+| YOLO11m | 795 | 1,220 | **PENDING** | **PENDING** | **PENDING** | **PENDING** | Teammate's test evaluation not supplied |
 
-Table 7b. Accuracy comparison on the cleaned held-out test split. All three rows use the same split,
-image size, class IDs and evaluation protocol.
+Table 7c. Accuracy comparison on the cleaned held-out test split. Only measured values are shown.
 
 When the missing values arrive, the preferred decision rule is: choose the *smallest* model whose
 mAP@50-95 gain over the next smaller model is large enough to justify its extra latency and memory.
@@ -863,17 +880,45 @@ the same split with the same protocol.
 ## 10.7 Interpreting the model-scale comparison
 
 The official COCO figures in Table 5a show a clear ordering — YOLO11m above YOLO11s above YOLO11n —
-but that ordering is a prior expectation, not a result for this dataset. The cleaned split has 35
-nearly balanced classes and a different object-size distribution from COCO, so the useful question is
-whether the larger models recover the specific errors seen here: missed small objects, uncertain box
-edges and the weak spoon/fork/knife classes. Section 7.5 is therefore deliberately left with visible
-**PENDING** cells. Once the YOLO11s and YOLO11m checkpoints are evaluated, the comparison should be
-read together with the confusion matrices and per-class AP, not as a single headline number.
+but that ordering is a prior expectation, not a result for this dataset. On the cleaned validation
+split the measured ordering is different: YOLO11s leads with mAP@50-95 0.6800, YOLO11n reaches
+0.6323, and YOLO11m reaches only 0.3170 after one epoch. This shows that model scale alone does not
+determine accuracy; schedule completeness matters at least as much. The teammate test-split values
+remain **PENDING**, so Table 7c does not declare a test-set winner.
 
-If the larger models improve recall but hurt precision, the assistive application may still prefer
-them when a missed obstacle is more dangerous than a false alert. If they improve mAP only slightly,
-nano remains the rational deployment choice. This interpretation is why the report does not declare a
-winner before the teammate results are in.
+For the final presentation prototype, no further training was needed: the high-accuracy
+`models/YOLO11s/best.pt` checkpoint was loaded directly by both DroidCam launchers. The simple demo
+uses `run_demo_droidcam.bat`, while the full tracking app uses `run_full_assistive_nav.bat` with
+`--voice-backend pyttsx3 --distance 20 --position ahead`. The full app therefore speaks a predictable
+sentence such as **“toothbrush detected about 20 metres ahead.”** The 20 m phrase is an explicit
+presentation override, not a calibrated sensor measurement; it exists so the spoken guidance can be
+demonstrated reliably without waiting for a real object in the camera view. The startup greeting
+“Assistive navigation ready.” is also intentional feedback, and it does not delay the first object
+announcement.
+
+The comparison should still be read together with the confusion matrices and per-class AP rather than
+as a single headline number. Once the teammate test values are supplied, a missed obstacle can be
+weighed against a false alert, and the accuracy–latency trade-off can be decided with evidence. Until
+then, YOLO11s is the best-validated checkpoint for the prototype and YOLO11n remains the competing
+low-power baseline.
+
+## 10.8 Result figures, workflow diagrams and launchers
+
+The public README keeps six committed result figures so that the evidence can be inspected without
+rerunning training: YOLO11s training curves, validation precision–recall curve and confusion matrix
+from the `yolo11s_custom` run, followed by the corresponding three YOLO11n baseline figures in
+`report/figures/`. The newer high-accuracy YOLO11s checkpoint also ships with its own `results.png`
+and `confusion_matrix.png` in `models/YOLO11s/`. Two Mermaid diagrams in the README record the toolchain
+(prepare → train → evaluate → predict → speak) and the DroidCam voice pipeline (camera → YOLO11 with
+ByteTrack → navigation brain → `pyttsx3`). These diagrams are documentation; the measured values are
+the tables above.
+
+The final launchers are `run_demo_droidcam.bat` for the short guidance demo and
+`run_full_assistive_nav.bat` for the full tracking application. Both use `models/YOLO11s/best.pt` and
+force the audible `pyttsx3` backend. The full launcher additionally forces a 20 m, ahead presentation
+phrase; removing `--distance 20 --position ahead` restores ordinary camera-relative distance and
+direction. This makes the prototype reproducible on a presentation machine without retraining or a
+network speech service.
 
 # 11. Limitations
 
@@ -902,20 +947,24 @@ collection of indoor and street objects. That is plausible for navigation, but t
 captured from a body-worn camera in the conditions a blind user would meet, and no class was
 confirmed as a pedestrian obstacle, so domain shift in deployment is likely and untested.
 
-**The model-scale comparison is incomplete at the time of writing.** YOLO11n has one completed run;
-the YOLO11s and YOLO11m results are being produced by teammates and are marked **PENDING** in
-Sections 6.5 and 7.5. Without those numbers there is no measured accuracy–latency trade-off for this
-dataset. A single seed per model also gives no estimate of run-to-run variance.
+**The model-scale comparison mixes split evidence.** Validation metrics are complete for all three
+models, but the teammate test-split values were not supplied and remain **PENDING** in Section 7.5.
+The validation result therefore supports choosing a checkpoint for the prototype, but it does not
+settle the final held-out accuracy–latency trade-off. A single seed per model also gives no estimate
+of run-to-run variance.
 
 **Small models have a measurable ceiling.** At 640 × 640 YOLO11n cannot resolve very small or heavily
-occluded objects; one object in five is missed, and in an assistive context a missed obstacle is the
-dangerous error. YOLO11s and YOLO11m may reduce that miss rate, but they also increase latency and
-memory use, so the trade-off must be measured rather than assumed.
+occluded objects; one object in five is missed on the test split, and in an assistive context a missed
+obstacle is the dangerous error. YOLO11s improves validation recall to 0.8178 and mAP@50-95 to 0.6800,
+but it also increases latency and memory use. YOLO11m was trained for only one epoch, so its low score
+is evidence of an incomplete schedule rather than a fair verdict on the medium architecture.
 
-**The live demo is a demonstration, not a product.** It runs on one camera at one resolution, with no
-depth, temporal smoothing or tracking, and no way to tell a distant object from a near one; boxes can
-flicker between frames. It has not been tested with users, in poor lighting or in motion, and it is
-not a safety device. The launchers are Windows-specific and the environment pins library versions.
+**The live demo is a demonstration, not a product.** The simple demo uses one camera at one resolution;
+the full app adds tracking and a rough box-height distance estimate, but neither has calibrated depth.
+The final launcher forces “20 metres ahead” only to make the spoken guidance predictable on stage;
+that value is not a measurement and must not be used for navigation. The system has not been tested
+with users, in poor lighting or in motion, and it is not a safety device. The launchers are
+Windows-specific and the environment pins library versions.
 
 # 12. Conclusion and Future Scope
 
@@ -928,13 +977,14 @@ neutralised; hashing 32,233 files before and after proved the source unchanged.
 
 A YOLO11n detector fine-tuned for 60 epochs in 1.89 hours reached mAP@50 0.847 and mAP@50-95 0.647 on
 a test split never used for tuning, with precision 0.843 and recall 0.794, and the best checkpoint was
-exported to a verified 10.2 MB ONNX graph that runs at about 0.04 s per frame on CPU. The report also
-sets up a fair three-scale study: YOLO11s and YOLO11m are being trained by teammates on the same
-cleaned split and schedule, and Sections 6.5 and 7.5 contain the protocol and comparison table with
-**PENDING** metric cells to be replaced by their verified results. Three tools sit on top of the
-completed model — batch prediction with CSV output, a per-class contact-sheet generator and a live
-webcam demo — and every class ID now carries a name, held in a JSON file that can be edited without
-retraining.
+exported to a verified 10.2 MB ONNX graph that runs at about 0.04 s per frame on CPU. Teammate
+checkpoints completed the three-scale validation comparison: YOLO11s reached mAP@50-95 0.6800 and
+YOLO11m 0.3170, while the teammate test metrics remain clearly marked **PENDING**. The higher
+accuracy YOLO11s checkpoint was adopted directly for the final DroidCam prototype, with an offline
+`pyttsx3` voice and a predictable presentation phrase, so no retraining was required for deployment.
+Three tools sit on top of the model — batch prediction with CSV output, a per-class contact-sheet
+generator and a live webcam demo — and every class ID now carries a name, held in a JSON file that can
+be edited without retraining.
 
 Most importantly, the numbers are trustworthy within their stated limits: leakage was measured and
 removed, and the ways the result could be wrong are listed in Chapter 11 rather than hidden.
@@ -948,10 +998,12 @@ than an object the user cares about.
 
 After that, the experiments with the best value per hour of compute are: resolve the 7 class conflicts
 and the 15 duplicate-stem pairs and re-check whether the weak classes improve without any change to
-the model; train at 960 × 960 to attack the small-object failures behind the recall of 0.794; finish
-the teammate-led YOLO11s and YOLO11m runs and fill Sections 6.5 and 7.5 so the accuracy–latency
-trade-off can be decided with evidence; and run a second and third seed to establish how much of the
-difference between classes is real rather than noise.
+the model; train at 960 × 960 to attack the small-object failures behind the recall of 0.794;
+evaluate the teammate YOLO11s and YOLO11m checkpoints once on the held-out test split so the
+**PENDING** cells in Section 7.5 can be filled; complete more than one epoch for YOLO11m before
+judging the medium architecture; and run a second and third seed to establish how much of the
+difference between classes is real rather than noise. Optional fine-tuning from the YOLO11s
+checkpoint is supported by `--lr0` and `--cos-lr` in `training/train_yolo11s.py` when time permits.
 
 Beyond accuracy, the path to a usable aid is temporal. A single frame is a weak signal, but ten frames
 with tracking give persistence, motion direction and a rough sense of approach. Combining detection
