@@ -26,10 +26,12 @@ mAP@50-95 0.6800 on the 2,982-image validation split, with all 35 classes evalua
 model of this report and was used directly in the final DroidCam voice prototype, so no retraining
 was needed for deployment. Its training run is documented with loss and metric curves, a validation
 confusion matrix and a sheet of real validation photographs with predicted boxes. YOLO11n and
-YOLO11m are retained as baselines on the same cleaned data: YOLO11n reached test mAP@50-95 0.647
-and was exported to a verified 10.2 MB ONNX graph, while the one-epoch YOLO11m checkpoint reached
-validation mAP@50-95 0.317. Held-out test metrics for the teammate checkpoints were not supplied and
-remain **PENDING**, so no test-split winner is claimed. Three tools were built on top of the model:
+YOLO11m are retained as baselines on the same cleaned data. The complete YOLO11n baseline scorecard
+is precision 0.843, recall 0.794, mAP@50 0.847 and mAP@50-95 0.647 on the untouched test split, and
+its checkpoint was exported to a verified 10.2 MB ONNX graph; the one-epoch YOLO11m checkpoint reached
+validation mAP@50-95 0.317. Held-out test metrics for the YOLO11s and YOLO11m checkpoints were not
+supplied and remain **PENDING**, so no test-split winner is claimed. Three tools were built on top of
+the model:
 a batch image predictor that writes annotated images and a CSV of boxes, a class inspection tool that
 crops real examples of any class ID, and a live webcam demo. Names appear in the tables, figures and
 model output, while the numeric IDs remain the authoritative labels.
@@ -50,7 +52,9 @@ model output, while the numeric IDs remain the authoritative labels.
 7.  Performance Evaluation
     - 7.2 Overall YOLO11s results
     - 7.3 YOLO11s confusion and qualitative results
-    - 7.5 Model-scale validation comparison
+    - 7.5 Model-scale validation and test comparison
+    - 7.6 Full YOLO11n performance metrics
+    - 7.7 Baseline YOLO11n result figures
 8.  Model Optimisation
 9.  Application Development
 10. Results and Discussion
@@ -627,6 +631,10 @@ one number instead of picking a threshold. **mAP@50** averages AP across classes
 IoU requirement; **mAP@50-95** averages over ten thresholds from 0.50 to 0.95, so it rewards boxes
 that are tightly fitted rather than merely in the right neighbourhood.
 
+This chapter reports the main YOLO11s result first (Sections 7.2–7.3), followed by export validation
+(7.4) and the shared three-model comparison (7.5). The complete YOLO11n baseline scorecard is kept in
+Sections 7.6–7.7, and its full 35-class per-class test results remain in Appendix A.
+
 ## 7.2 Overall YOLO11s results
 
 | Split | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 |
@@ -707,17 +715,19 @@ intervals should be inspected before claiming that a larger model is better. The
 also report inference time on the same hardware, because the official COCO speed figures in Table 5a
 will not transfer exactly to this 35-class model or to a student laptop.
 
-## 7.6 Baseline detail: YOLO11n
+## 7.6 Baseline detail: full YOLO11n performance metrics
 
-The YOLO11n numbers are kept for reference, but they are not the deployed model. Its test score is the
-only completed held-out evaluation in the project.
+Because YOLO11s is the deployed model, the YOLO11n numbers are kept as a complete baseline rather than
+the headline. Its test score is the only completed held-out evaluation in the project.
 
 | Split | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 |
 |:--|------:|------:|----------:|-------:|-------:|----------:|
-| Validation | 2,982 | 4,408 | 0.846 | 0.775 | 0.834 | 0.632 |
+| Validation | 2,982 | 4,408 | 0.8463 | 0.7745 | 0.8343 | 0.6323 |
 | **Test** | **795** | **1,220** | **0.843** | **0.794** | **0.847** | **0.647** |
 
-Table 9a. Overall YOLO11n detection performance on the cleaned dataset.
+Table 9a. Overall YOLO11n detection performance on the cleaned dataset. The validation row uses the
+four-decimal values in the run record; the test row uses the completed evaluation values. The full
+per-class test table is in Appendix A.
 
 Its strongest and weakest held-out classes are listed below. They indicate where the small baseline
 struggles; they are not a per-class evaluation of YOLO11s.
@@ -740,6 +750,27 @@ Table 9b. Five strongest and five weakest YOLO11n classes on the test split.
 Stairs (class 27) are instructive: AP@50 is healthy but AP@50-95 is much lower, so the object is found
 without a tight box. Spoon (class 6) shows high precision with low recall. These are label and
 small-object problems that a larger model does not automatically solve.
+
+## 7.7 Baseline YOLO11n result figures
+
+The following figures are the retained result evidence for the completed YOLO11n baseline. They are
+included alongside the YOLO11s training-run figures so that the full baseline scorecard can be read
+with its training curves, precision–recall behaviour and class confusion. They do not change the
+deployment choice: the final DroidCam launchers use YOLO11s.
+
+![Training losses and validation metrics across the completed 60-epoch YOLO11n baseline run.](figures/yolo11n_results.png){width=5.6in}
+
+*Figure 7b. YOLO11n training curves from `report/figures/yolo11n_results.png`.*
+
+![Validation precision–recall curves for the YOLO11n model over the 35 numeric class IDs.](figures/yolo11n_val_PR_curve.png){width=5.0in}
+
+*Figure 7c. YOLO11n validation precision–recall curve from
+`report/figures/yolo11n_val_PR_curve.png`.*
+
+![Normalised validation confusion matrix for the YOLO11n model over the 35 numeric class IDs.](figures/yolo11n_val_confusion_matrix.png){width=5.4in}
+
+*Figure 7d. YOLO11n validation confusion matrix from
+`report/figures/yolo11n_val_confusion_matrix.png`.*
 
 # 8. Model Optimisation
 
@@ -872,8 +903,9 @@ The main YOLO11s checkpoint detects 35 classes with validation precision 0.8786,
 mAP@50 0.8719 and mAP@50-95 0.6800 on 2,982 images and 4,408 boxes. It is a 9.43-million-parameter
 model that runs on the final laptop prototype without retraining. Because these are validation
 numbers used to select the checkpoint, the held-out test metrics for this checkpoint are marked
-**PENDING** until they are supplied. The YOLO11n baseline reached mAP@50-95 0.647 on the untouched
-test split, but it is not the model used in the final voice demo.
+**PENDING** until they are supplied. The complete YOLO11n baseline scorecard is precision 0.843,
+recall 0.794, mAP@50 0.847 and mAP@50-95 0.647 on the untouched test split, but it is not the model
+used in the final voice demo.
 
 ## 10.2 Training behaviour
 
@@ -960,10 +992,13 @@ confusion matrix, and `yolo11s_dataset_samples.jpg` six real validation photogra
 predicted by the final checkpoint. The sample sheet is produced by
 `report/make_yolo11s_report_figures.py`, which reads the cleaned split and the YOLO11s weights and
 writes only the finished figures — no prediction images, validation runs or caches are added. The
-README still keeps the older `yolo11s_custom` gallery and the YOLO11n baseline for historical
-comparison, but the figures used in this report come from the final deployed run. Two Mermaid diagrams
-record the toolchain (prepare → train → evaluate → predict → speak) and the DroidCam voice pipeline
-(camera → YOLO11 with ByteTrack → navigation brain → `pyttsx3`).
+README still keeps the older `yolo11s_custom` gallery for historical comparison, but the figures used
+in the main sections come from the final deployed run. The complete YOLO11n baseline evidence is also
+retained in `report/figures/`: `yolo11n_results.png`, `yolo11n_val_PR_curve.png` and
+`yolo11n_val_confusion_matrix.png` are reproduced in Section 7.7 alongside the full baseline metrics
+in Section 7.6. Two Mermaid diagrams record the toolchain (prepare → train → evaluate → predict →
+speak) and the DroidCam voice pipeline (camera → YOLO11 with ByteTrack → navigation brain →
+`pyttsx3`).
 
 The final launchers are `run_demo_droidcam.bat` for the short guidance demo and
 `run_full_assistive_nav.bat` for the full tracking application. Both use `models/YOLO11s/best.pt` and
@@ -1032,9 +1067,11 @@ mAP@50-95 0.6800, the best validation result in the three-scale comparison. Its 
 adopted directly for the final DroidCam prototype, with an offline `pyttsx3` voice and a predictable
 presentation phrase, so no retraining was required for deployment. The run is documented with
 training curves, a validation confusion matrix and a sheet of real validation photographs carrying
-YOLO11s predictions. YOLO11n remains the tested low-power baseline at test mAP@50-95 0.647 with a
-verified 10.2 MB ONNX export; YOLO11m reached validation mAP@50-95 0.3170 after one epoch. Held-out
-test metrics for the YOLO11s and YOLO11m checkpoints remain clearly marked **PENDING**. Three tools
+YOLO11s predictions. YOLO11n remains the fully tested low-power baseline: precision 0.843, recall
+0.794, mAP@50 0.847 and mAP@50-95 0.647 on the held-out test split, with a verified 10.2 MB ONNX
+export and its own result figures in Section 7.7. YOLO11m reached validation mAP@50-95 0.3170 after
+one epoch. Held-out test metrics for the YOLO11s and YOLO11m checkpoints remain clearly marked
+**PENDING**. Three tools
 sit on top of the model — batch prediction with CSV output, a per-class contact-sheet generator and a
 live webcam demo — and every class ID carries a display name in a JSON file that can be edited without
 retraining.

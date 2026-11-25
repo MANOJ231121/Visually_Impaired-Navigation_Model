@@ -1012,9 +1012,11 @@ The written report is kept in `report/`:
 
 The updated report is organised around the final YOLO11s training run. It adds
 YOLO11s training curves, a validation confusion matrix and a sheet of real
-validation photographs with predicted boxes, plus recent research, the baseline
-comparison and the final DroidCam voice-prototype notes. Test metrics that were
-not supplied are marked **PENDING** instead of being invented.
+validation photographs with predicted boxes. It also includes the complete
+YOLO11n baseline scorecard and training, precision–recall and confusion figures,
+alongside recent research, the three-model comparison and the final DroidCam
+voice-prototype notes. Test metrics that were not supplied are marked
+**PENDING** instead of being invented.
 
 ---
 
