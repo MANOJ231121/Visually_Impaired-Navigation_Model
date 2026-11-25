@@ -3,11 +3,13 @@
 A clean, reproducible Ultralytics YOLO11 training pipeline for a **35-class
 object-detection dataset**. The project provides independent training scripts
 for YOLO11n and YOLO11s, a reusable evaluation script with model comparison,
-and a prediction script that works on images, folders, video, and webcams.
+a prediction script that works on images, folders, video, and webcams, and a
+demo assistive-navigation app that speaks short guidance such as
+"Person, 20 metres ahead, moving left."
 
-The dataset is intentionally **not** committed to this repository. Download
-it separately (see below), extract it next to `data.yaml`, and the scripts will
-find it automatically.
+The dataset is intentionally **not** committed to this repository. This working
+folder already has it at `model_training/dataset/`; `data.yaml` points there, so
+the scripts find it automatically.
 
 ---
 
@@ -21,11 +23,14 @@ find it automatically.
 - [Experimenting with other YOLO models](#experimenting-with-other-yolo-models)
 - [Evaluation](#evaluation)
 - [Prediction](#prediction)
+- [Assistive voice demo](#assistive-voice-demo)
 - [GPU and CPU execution](#gpu-and-cpu-execution)
 - [Example command sheet](#example-command-sheet)
 - [Reproducibility notes](#reproducibility-notes)
 - [Class names](#class-names)
+- [Trained YOLO11s results](#trained-yolo11s-results)
 - [Baseline results](#baseline-results)
+- [Project report](#project-report)
 - [Troubleshooting](#troubleshooting)
 - [Provenance and assumptions](#provenance-and-assumptions)
 
@@ -48,14 +53,17 @@ find it automatically.
   and/or `test`, save JSON/CSV metrics, and print a comparison table.
 - **Flexible prediction** — image, folder, video, webcam, glob, or stream URL,
   with configurable confidence, IoU, image size, device, and class filters.
-- **Small dependency footprint** — Ultralytics plus PyTorch and PyYAML.
+- **Assistive voice demo** — a rules-based navigation brain turns detections
+  into short spoken guidance; distance and motion are simulated for the demo
+  and can later be replaced by depth sensing and tracking.
+- **Small dependency footprint** — Ultralytics, PyTorch, PyYAML and pyttsx3.
 
 ---
 
 ## Project structure
 
 ```text
-YOLO11-Object-Detection/
+object detection/                 # this working folder
 ├── training/
 │   ├── train_yolo11n.py      # YOLO11n training entry point
 │   └── train_yolo11s.py      # YOLO11s training entry point
@@ -63,16 +71,25 @@ YOLO11-Object-Detection/
 │   └── evaluate.py           # val/test evaluation + model comparison
 ├── prediction/
 │   └── predict.py            # image / folder / video / webcam inference
+├── assistive/
+│   ├── live_guide.py         # demo app: detection -> guidance -> speech
+│   ├── navigation_brain.py   # rules that build the spoken sentence
+│   └── voice.py              # background text-to-speech queue
 ├── data.yaml                 # 35 classes, relative dataset paths
+├── class_names.json          # recovered display names for IDs 0-34
 ├── requirements.txt
 ├── .gitignore
-└── README.md
+├── README.md
+├── model_training/               # original runs and extracted dataset
+├── final batches/                # original source batches
+├── report/                       # project report and figures
+└── dataset_*/                    # audit, staging and verification scripts
 
 # Generated at runtime (ignored by Git):
 runs/train/<run-name>/        # training outputs and weights
 evaluation/results/<run>/     # evaluation metrics and plots
 prediction/outputs/<name>/    # annotated predictions
-dataset/                      # your extracted dataset (not committed)
+model_training/dataset/       # extracted dataset (not committed)
 ```
 
 ---
@@ -83,15 +100,15 @@ dataset/                      # your extracted dataset (not committed)
 
 The dataset is distributed separately because it is too large for Git.
 
-> **Download link:** **[ADD YOUR GOOGLE DRIVE LINK HERE]**
+> **Download link:** https://drive.google.com/file/d/1NFMPXsI8RGnXomLqamtXp0iCXGoQZZks/view?usp=sharing
 
 ### Expected layout
 
-Extract the dataset ZIP so that the project root contains a `dataset/` folder
-with exactly this structure:
+This working folder already contains the extracted dataset at
+`model_training/dataset/`:
 
 ```text
-dataset/
+model_training/dataset/
 ├── images/
 │   ├── train/
 │   ├── val/
@@ -105,7 +122,7 @@ dataset/
 `data.yaml` already points at this layout:
 
 ```yaml
-path: dataset
+path: model_training/dataset
 train: images/train
 val: images/val
 test: images/test
@@ -547,6 +564,172 @@ python prediction/predict.py \
 
 ---
 
+## Assistive voice demo
+
+The demo app adds a small **navigation brain** on top of YOLO11. It turns one
+detection into one short spoken instruction:
+
+```text
+Person, 20 metres ahead, moving left.
+```
+
+### How it works
+
+```text
+camera / image
+    ↓
+YOLO11 + ByteTrack  →  class name, box, confidence, track ID
+    ↓
+navigation brain    →  position, distance, motion → sentence
+    ↓
+pyttsx3             →  spoken guidance (offline, no internet needed)
+```
+
+The brain uses simple, predictable rules:
+
+| Part | Demo behaviour | Production replacement |
+| --- | --- | --- |
+| Class | YOLO prediction; `class_names.json` gives readable names | same |
+| Position | box centre: left / ahead / right | same |
+| Distance | simulated with `--distance` (default `20` m) | stereo camera, LiDAR, or calibrated depth model |
+| Motion | `--motion-mode left/right` forces a demo phrase; `auto` uses tracker history | ByteTrack/DeepSORT over video |
+| Speech | `pyttsx3` desktop voice | earpiece / Bluetooth speaker |
+
+> A single photo cannot show that something is "moving left". The
+> `--motion-mode left` option is intentional for presentations. Set
+> `--motion-mode auto` with a webcam to derive motion from real tracking.
+
+### Install the extra dependency
+
+```bash
+pip install -r requirements.txt
+```
+
+`pyttsx3` uses the voice already installed on Windows, so no internet is
+needed for speech.
+
+### Run it
+
+**Fastest demo — webcam + COCO nano model** (downloads `yolo11n.pt` once):
+
+```bash
+python assistive/live_guide.py
+```
+
+**Guaranteed sentence from one image:**
+
+```bash
+python assistive/live_guide.py \
+  --source path/to/person.jpg \
+  --motion-mode left \
+  --position-mode ahead
+```
+
+**With your trained 35-class checkpoint:**
+
+```bash
+python assistive/live_guide.py \
+  --weights path/to/best.pt \
+  --source 0 \
+  --names class_names.json
+```
+
+**Quiet test without speaking:**
+
+```bash
+python assistive/live_guide.py --no-voice
+```
+
+### One-click launchers (Windows)
+
+If you prefer not to type commands, double-click:
+
+| File | Purpose |
+| --- | --- |
+| `check_demo.bat` | Checks Python and all demo dependencies |
+| `check_voice.bat` | Speaks a test sentence and lists Windows voices |
+| `run_demo_webcam.bat` | Starts the webcam demo |
+| `run_demo_image.bat "path\to\person.jpg"` | Starts the demo on one image |
+| `run_demo_phone.bat` | Prompts for a phone-camera stream URL |
+| `run_demo_droidcam.bat` | Simple DroidCam demo: detection → guidance → speech |
+| `run_full_assistive_nav.bat` | Full DroidCam app: tracking, distance and speech |
+
+Press **q** in the preview window to quit.
+
+> If you already use DroidCam, ignore `run_demo_phone.bat`. Start the DroidCam
+> Client on Windows, wait for the phone preview, then double-click
+> `run_demo_droidcam.bat` for the short demo sentence, or
+> `run_full_assistive_nav.bat` for the full tracking app. Both force the audible
+> `pyttsx3` voice. The video HUD and log must show `voice ON (pyttsx3)`.
+
+If guidance appears on screen but you hear nothing:
+
+1. Run `check_voice.bat`. This speaks a fixed test sentence.
+2. Check the Windows volume and the selected output device (speakers,
+   headphones or Bluetooth).
+3. Do not press **v** in the video window: it toggles voice off. Do not press
+   **m**: it cuts the current sentence.
+4. If the log says `voice ON (console)`, the speech engine failed and guidance
+   is only printed. Reinstall `pyttsx3` with `pip install pyttsx3`.
+
+### Audio-free DroidCam check
+
+To prove that detection and guidance work without relying on speakers:
+
+```powershell
+python assistive\live_guide.py --weights Assistive-Navigation\models\best.pt --names class_names.json --source droidcam --voice-backend console --no-show --max-frames 60
+```
+
+This prints `[VOICE] ...` lines instead of speaking and stops after 60 frames.
+
+### Using your phone as the camera
+
+A phone can be used in two ways:
+
+**1. Wi-Fi / IP stream — easiest and works on Android**
+
+Install an IP-camera app such as **IP Webcam**, connect the phone and laptop to
+the same Wi-Fi, tap **Start server**, then use the URL it shows:
+
+```powershell
+python assistive\live_guide.py \
+  --source http://192.168.1.15:8080/video \
+  --motion-mode left \
+  --position-mode ahead
+```
+
+Or simply run `run_demo_phone.bat` and paste the URL.
+
+**2. USB / UVC webcam mode — only on phones that support it**
+
+Some Android phones expose a webcam mode. Connect USB, allow the pop-up, then
+try camera indexes:
+
+```powershell
+python assistive\live_guide.py --source 1 --motion-mode left --position-mode ahead
+python assistive\live_guide.py --source 2 --motion-mode left --position-mode ahead
+```
+
+iPhones usually need an app such as EpocCam/NDI that creates a virtual camera;
+after installing it, try `--source 0` or `--source 1`.
+
+> Wi-Fi streaming has some delay. It is fine for this demo, but a real
+> navigation aid should use a low-latency camera connection.
+
+Useful options:
+
+| Option | Purpose |
+| --- | --- |
+| `--distance 20` | simulated metres spoken in the guidance |
+| `--no-distance` | omit the distance phrase |
+| `--motion-mode auto/left/right/none` | real tracking or a forced demo direction |
+| `--position-mode auto/ahead/left/right/none` | real box position or a forced demo position |
+| `--cooldown 3` | seconds between repeated warnings |
+| `--no-show` | run headless (no preview window) |
+| `--rate 165` | speech speed |
+
+---
+
 ## GPU and CPU execution
 
 All three scripts accept `--device`.
@@ -678,6 +861,34 @@ Renaming only affects display text. It does not change trained weights.
 
 ---
 
+## Trained YOLO11s results
+
+These results were merged from the original
+`Visually_Impaired-Navigation_Model` repository and are kept unchanged here.
+YOLO11s was trained by transfer learning from `yolo11s.pt` on the full 35-class
+dataset (11,526 train, 2,982 val, 795 test images) on an NVIDIA GeForce RTX
+3050 Laptop GPU with CUDA 12.1.
+
+### Model weights location
+
+- **Best weights**: `runs/detect/yolo11s_custom/weights/best.pt` (19.2 MB)
+- **Last weights**: `runs/detect/yolo11s_custom/weights/last.pt` (19.2 MB)
+- **Training artefacts**: `runs/detect/yolo11s_custom/` (`results.csv`,
+  `results.png`, batch previews)
+- **Evaluation curves and metrics**: `evaluation/results/yolo11s_custom/`
+  (`confusion_matrix.png`, `BoxPR_curve.png`, `per_class.csv`)
+
+### Performance: YOLO11s vs YOLO11n baseline
+
+| Model | Split | Images | Instances | Precision (P) | Recall (R) | mAP50 | mAP50-95 | Weights path |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **YOLO11s (Custom)** | **val** | **2,982** | **4,408** | **0.6527** | **0.6070** | **0.6514** | **0.4408** | `runs/detect/yolo11s_custom/weights/best.pt` |
+| **YOLO11s (Custom)** | **test** | **795** | **1,220** | **0.6266** | **0.6088** | **0.6427** | **0.4476** | `runs/detect/yolo11s_custom/weights/best.pt` |
+| YOLO11n (Baseline) | val | 2,982 | 4,408 | 0.8463 | 0.7745 | 0.8343 | 0.6323 | `runs/full_yolo11n_640_v3/weights/best.pt` |
+| YOLO11n (Baseline) | test | 795 | 1,220 | 0.8425 | 0.7940 | 0.8470 | 0.6465 | `runs/full_yolo11n_640_v3/weights/best.pt` |
+
+---
+
 ## Baseline results
 
 These metrics come from the original YOLO11n experiment
@@ -689,6 +900,23 @@ slightly different numbers.
 | ----- | ------ | --------- | --------- | ------ | ------ | -------- |
 | val   | 2,982  | 4,408     | 0.8463    | 0.7745 | 0.8343 | 0.6323   |
 | test  | 795    | 1,220     | 0.8425    | 0.7940 | 0.8470 | 0.6465   |
+
+---
+
+## Project report
+
+The written report is kept in `report/`:
+
+| File | Purpose |
+| --- | --- |
+| `report/PROJECT_REPORT_UPDATED.md` | Editable source with 2024–2026 references |
+| `report/Project_Report_Updated.docx` | A4 / Times New Roman version with page numbers |
+| `report/Project_Report_Updated.pdf` | PDF export of the updated report |
+| `report/figures/` | Class-index and class-distribution figures |
+
+The updated report adds recent research, a YOLO11n/s/m accuracy comparison,
+and collaborative-training notes. Metrics that were not supplied are marked
+**PENDING** instead of being invented.
 
 ---
 

@@ -1,0 +1,16 @@
+{
+  "_comment": "Optional camera aliases. Run `python src/main.py --list-cameras` after changing cameras or USB ports, then update the indices below. Keys beginning with _ are comments.",
+  "_detected_on": "Indices below were detected on this laptop (Windows). Device indices can change; the app never guesses the DroidCam index when an alias is missing.",
+  "aliases": {
+    "laptop": {
+      "index": 0,
+      "backend": "dshow",
+      "name": "Integrated Camera"
+    },
+    "droidcam": {
+      "index": 2,
+      "backend": "auto",
+      "name": "DroidCam Source 3"
+    }
+  }
+}

@@ -93,3 +93,21 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# ---------------------------------------------------------------------------
+# Local working data and generated analysis bulk (keep written summaries only)
+# ---------------------------------------------------------------------------
+model_training/
+prepared_dataset/
+final batches/
+
+dataset_class_analysis/**/*.png
+dataset_class_analysis/**/*.csv
+dataset_verification/**/*.png
+dataset_verification/**/*.csv
+dataset_preparation_plan/**/*.json
+dataset_preparation_plan/**/*.csv
+dataset_staging/**/*.csv
+
+# Local test video for Assistive-Navigation; regenerate with checks/make_test_video.py
+Assistive-Navigation/checks/scenario.mp4

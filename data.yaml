@@ -1,12 +1,12 @@
 # ---------------------------------------------------------------------------
 # Dataset configuration for YOLO11 training / evaluation.
 #
-# The dataset is NOT stored in this repository. Download it separately and
-# extract it so that the `path` below points at the extracted `dataset/`
-# folder. See README.md for download and extraction instructions.
+# The dataset is NOT stored in this repository. This working copy points at
+# the existing extracted dataset under model_training/dataset. For a fresh
+# clone, download the dataset and change `path` to your local dataset folder.
 #
 # Expected layout:
-#   dataset/
+#   model_training/dataset/
 #     images/
 #       train/
 #       val/
@@ -21,7 +21,7 @@
 # from any working directory.
 # ---------------------------------------------------------------------------
 
-path: dataset
+path: model_training/dataset
 train: images/train
 val: images/val
 test: images/test

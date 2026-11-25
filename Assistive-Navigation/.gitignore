@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Generated during runs
+checks/screenshots/
+checks/logs/
+checks/*.csv
+checks/*.json
+checks/session_*.mp4

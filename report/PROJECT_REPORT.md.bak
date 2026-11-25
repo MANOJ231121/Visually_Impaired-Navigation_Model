@@ -1,0 +1,1017 @@
+---
+title: "Assistive Navigation Obstacle Detection using YOLO11"
+subtitle: "Dataset preparation, training, evaluation and real-time deployment of a 35-class object detector"
+author: "[Your Name] â€” [Roll Number]"
+date: "Department of [Department], [College]\n\nProject Guide: [Guide Name]\n\nNovember 2026"
+---
+
+# Abstract {.unnumbered}
+
+This project builds and evaluates a real-time object detector that can recognise 35 categories of
+objects in a camera image, as the perception layer of an assistive navigation aid. The starting
+point was an annotated dataset of 16,122 images arranged in four batches. The dataset had no
+class-name metadata at all, so every class had to be handled by its numeric ID (0â€“34) throughout.
+
+A read-only audit was performed first. It found label noise, 727 groups of byte-identical images,
+and 222 duplicate groups that already spanned the train, validation and test splits. A cleaned,
+writable copy of the dataset was then built without modifying a single source file: 823 redundant
+images were removed and cross-split duplicate groups were collapsed, leaving 15,303 images and
+21,944 bounding boxes.
+
+A YOLO11n model, pre-trained on COCO, was fine-tuned for 60 epochs at 640 Ã— 640 resolution on a
+laptop RTX 4050 GPU in 1.89 hours. On the untouched test split the model reached a precision of
+0.843, a recall of 0.794, mAP@50 of 0.847 and mAP@50-95 of 0.647. All 35 classes were evaluated
+individually. The best weights were exported to ONNX (10.2 MB, static 640 Ã— 640, verified with the
+ONNX checker) and run at roughly 0.04 s per frame on CPU. Three user-facing tools were built on top
+of the model: a batch image predictor that writes an annotated image and a CSV of boxes, a class
+inspection tool that crops real examples of any class ID, and a live webcam demo with on-screen
+confidence and frame-rate feedback. An independent COCO detector was used to recover the meaning of
+the most common class IDs as supporting evidence, since no official class names exist.
+
+The report documents the dataset, the preparation pipeline, the model, the training run, the
+evaluation results, the optimisations that were actually applied, the applications, and the honest
+limitations of the result.
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Contents {.unnumbered}
+
+1.  Introduction
+2.  Literature Review
+3.  Dataset Description
+4.  Methodology
+5.  Model Architecture
+6.  Model Training
+7.  Performance Evaluation
+8.  Model Optimisation
+9.  Application Development
+10. Results and Discussion
+11. Limitations
+12. Conclusion and Future Scope
+13. References
+
+Appendix A â€” Full per-class test results
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# 1. Introduction
+
+## 1.1 Project overview
+
+A person who cannot see clearly still has to walk through a world full of things that can be
+walked into. A doorway, a chair leg, a low table, a kerb, a parked bicycle and a waste bin are all
+ordinary objects, but for someone with low vision each one is a possible fall. The long-term goal
+of assistive navigation research is a small device â€” a phone, a chest-mounted camera, or a pair of
+smart glasses â€” that looks ahead and says, in time, "there is something in front of you".
+
+The first requirement of any such device is perception: the ability to look at a camera frame and
+produce a list of objects, each with a rectangular boundary and a category. That is exactly what a
+modern object detector does. This project builds that perception layer end to end. It starts from a
+large annotated image dataset, prepares it carefully, trains a lightweight YOLO11 model, measures
+how well the model really performs, exports it for deployment, and wraps it in tools that a person
+can actually use â€” a batch image tester, a video tester, and a live webcam demo.
+
+The work deliberately spends as much effort on data honesty as on modelling. A detection score is
+only meaningful if the images used for testing were never seen during training. Early inspection of
+the dataset showed that this was not guaranteed: the same photograph appeared in more than one
+split, sometimes with different annotations. A large part of this project was therefore about
+measuring that contamination, removing it in a copy of the data, and reporting results that are not
+inflated by it.
+
+## 1.2 Objectives
+
+The objectives of the project were:
+
+- To audit the supplied 35-class dataset without altering any original file, and to quantify its
+  label quality, duplication and split leakage.
+- To construct a clean, reproducible training copy in which duplicated images cannot leak between
+  train, validation and test.
+- To fine-tune a lightweight, real-time object detector (YOLO11n) on that copy at 640 Ã— 640
+  resolution.
+- To evaluate the trained model on a test split that was never used for tuning, and to report
+  overall and per-class precision, recall, mAP@50 and mAP@50-95.
+- To export the model to a portable format and verify that it runs correctly outside the training
+  framework.
+- To build simple, usable interfaces for still images, video files and a live laptop camera, and to
+  document how each one is used.
+
+## 1.3 Problem statement
+
+Given an RGB camera image, the system must output a set of bounding boxes, each labelled with one
+of 35 numeric class IDs and a confidence score, fast enough to run on consumer hardware. The
+dataset provides no mapping from class ID to object name, so the system must work correctly with
+numeric labels and allow human-readable names to be attached later without retraining. The reported
+accuracy must reflect performance on images the model has genuinely never seen.
+
+## 1.4 Scope and approach
+
+The scope is limited to the detection stage. No depth sensing, no path planning, no audio output
+and no user trial are included. The model chosen is the smallest member of the YOLO11 family,
+because the intended deployment target is a small, low-power device and because a small model is
+the honest baseline: if a nano model already reaches a useful score, larger models can be justified
+later. The dataset is used exactly as supplied; no class was merged, removed or renamed.
+
+# 2. Literature Review
+
+## 2.1 The object detection problem
+
+Object detection combines two tasks that are easy for humans and hard for machines: deciding *what*
+is in an image, and deciding *where* it is. Formally, a detector must produce a set of bounding
+boxes, assign each box a class label, and do so without being told in advance how many objects are
+present. Before deep learning, this was done with hand-designed features such as HOG or SIFT
+combined with sliding windows and classifiers. Those pipelines were slow and fragile under changes
+in lighting, scale and viewpoint.
+
+## 2.2 Convolutional neural networks
+
+The foundation of modern detection is the convolutional neural network (CNN). LeCun et al. (1998)
+showed that a network of learned convolution filters could recognise handwritten digits with very
+low error, using weight sharing to exploit the fact that a useful pattern is useful anywhere in the
+image. The idea stayed modest until Krizhevsky et al. (2012) trained a deep CNN, AlexNet, on the
+ImageNet benchmark and beat classical methods by a large margin. Two things made that possible: GPU
+computing and enough labelled data.
+
+Depth brought its own problem. Very deep networks are hard to train because gradients fade as they
+travel backwards. He et al. (2016) solved this with residual connections, in which a layer learns a
+*change* to its input rather than a complete transformation. ResNet-style blocks are now standard,
+and the residual idea appears inside almost every modern detector backbone.
+
+## 2.3 Two-stage detectors
+
+The first deep detectors separated *finding* from *classifying*. Girshick et al. (2014) proposed
+R-CNN: generate about two thousand region proposals with a classical algorithm, run a CNN on each
+one, and classify the result. It was accurate but extremely slow, because the CNN ran separately on
+every proposal. Fast R-CNN (Girshick, 2015) shared the convolution work across proposals, and
+Faster R-CNN (Ren et al., 2015) replaced the classical proposal algorithm with a small learned
+network, the Region Proposal Network. Two-stage detectors remained the accuracy leaders for several
+years, and they are still used where speed does not matter.
+
+## 2.4 One-stage detectors and YOLO
+
+Redmon et al. (2016) took the opposite approach. YOLO â€” *You Only Look Once* â€” divided the image
+into a grid and asked each grid cell to predict boxes and class probabilities in a single forward
+pass. There was no proposal stage at all. The method was less accurate on small objects than
+Faster R-CNN at the time, but it was dramatically faster, and it established the design that
+almost all real-time detectors follow today.
+
+Two refinements were important. First, feature pyramids (Lin et al., 2017a): instead of predicting
+only from the deepest, coarsest feature map, a detector combines deep semantic features with
+shallow, high-resolution features so that small objects remain detectable. Second, the handling of
+the huge class imbalance between the few object-containing locations and the many empty ones. Lin
+et al. (2017b) addressed this with the focal loss, which down-weights easy negatives. FCOS (Tian et
+al., 2019) later showed that anchors themselves could be removed, making the detector anchor-free.
+
+## 2.5 Evolution of the YOLO family
+
+YOLOv3 (Redmon & Farhadi, 2018) introduced multi-scale predictions and a stronger backbone, and
+became for years the default choice for practical real-time work. YOLOv4 (Bochkovskiy et al., 2020)
+added a large collection of training improvements â€” mosaic augmentation, CIoU loss, self-adversarial
+training â€” and demonstrated that many small gains compound. From YOLOv5 onwards, the Ultralytics
+implementation made the family easy to train and export, which is a large part of why YOLO is now
+the default in applied projects.
+
+YOLO11 (Jocher et al., 2024) is the version used here. It keeps the anchor-free, decoupled-head
+design of YOLOv8 and changes the backbone and neck blocks to C3k2 modules, adds a spatial pyramid
+pooling fast (SPPF) stage at the end of the backbone, and uses a distribution focal loss (Li et
+al., 2020) for box regression, which predicts a probability distribution over box edges instead of
+a single offset. The result is a family that scales from roughly two million parameters (nano) to
+tens of millions, all trained with the same recipe.
+
+## 2.6 Transfer learning
+
+Training a detector from random weights needs far more data and time than a student project can
+provide. Transfer learning solves this: a model trained on a large general dataset such as COCO
+(Lin et al., 2014) already knows edges, textures and object-like shapes. Fine-tuning reuses those
+features and only adapts the final layers to the new classes. This is why a nano model can reach a
+respectable score on a 35-class dataset after less than two hours of training.
+
+## 2.7 Evaluation metrics
+
+Detections are matched to ground truth using the Intersection over Union (IoU), the area shared by
+two boxes divided by the area they cover together. A detection counts as correct if its IoU with a
+ground-truth box of the same class exceeds a threshold. *Precision* is the fraction of reported
+boxes that were correct; *recall* is the fraction of real objects that were found. Average
+precision (AP) summarises the precisionâ€“recall curve for one class, and mean average precision
+(mAP) averages it over classes. mAP@50 uses an IoU threshold of 0.50 and is the traditional,
+lenient score. mAP@50-95 averages the score over thresholds from 0.50 to 0.95 in steps of 0.05 and
+is much stricter, because a box must be tight, not merely in the right place. This project reports
+both, and treats mAP@50-95 as the honest headline number.
+
+## 2.8 The gap this project addresses
+
+Published detector results are almost always measured on COCO or Pascal VOC, where class names,
+splits and annotation quality are controlled. Applied projects rarely have that luxury. Exported
+datasets often arrive with numeric labels, no metadata, duplicated images and inconsistent
+annotations, and a model trained on them can look far better than it is. This project therefore
+treats data auditing as part of the method rather than as an afterthought, and reports results only
+after measurable leakage has been removed.
+
+# 3. Dataset Description
+
+## 3.1 Source and structure
+
+The dataset was supplied as a folder named `final batches` containing four batches. Each batch has
+the same internal layout: `images/train`, `images/val`, `images/test` and matching `labels`
+folders. Labels are plain text files in the standard YOLO format, one line per object:
+
+```
+class_id  x_center  y_center  width  height
+```
+
+All four coordinates are normalised to the range 0â€“1, and `class_id` is an integer from 0 to 34.
+There are 35 classes and no gaps in the numbering. File names contain patterns such as
+`name_jpg.rf.938329010f8ef2aa4a8d87f3636f3f0b.jpg`, which is the naming convention produced by a
+Roboflow export; this is the strongest available clue about the dataset's origin.
+
+Table 1 summarises the source. Across the four batches there are 16,122 image files, 16,107 label
+files and 23,043 bounding boxes. The difference of 15 between image and label counts is not missing
+data: fifteen image pairs share a single file name stem within the same split, so only one label can
+exist for the pair.
+
+| Batch | Images | Labels | Boxes | Dominant formats |
+|:------|-------:|-------:|------:|:-----------------|
+| Batch 1 | 3,959 | 3,959 | 6,020 | jpg, jpeg, png |
+| Batch 2 | 4,100 | 4,100 | 5,848 | jpg, jpeg, png |
+| Batch 3 | 4,066 | 4,062 | 5,846 | jpg, jpeg, png, webp, gif |
+| Batch 4 | 3,997 | 3,986 | 5,329 | jpg, jpeg, png |
+| **Total** | **16,122** | **16,107** | **23,043** | |
+
+Table 1. Source dataset composition, measured by a read-only audit.
+
+## 3.2 Classes and balance
+
+Each of the 35 classes appears in every batch and every split. Box counts per class range from 525
+(class 30) to 943 (class 0), a ratio of only 1.80 : 1. Real-world detection datasets are usually
+strongly long-tailed, with a few classes dominating and many rare ones. A ratio this flat suggests
+the dataset was deliberately balanced or assembled from curated sources. That is not an error, but
+it has a consequence for this report: the measured mAP will not reflect how the model would behave
+on a naturally imbalanced stream of images, where rare classes would be seen far less often.
+
+## 3.3 Class names are not available
+
+A recursive search of the dataset, and of the folders next to it, found no `data.yaml`, no
+`classes.txt`, no `obj.names`, no README and no JSON or CSV metadata. The annotation files contain
+only integers. It is therefore impossible to state from the data which object each ID represents.
+Any name table would be an assumption, not a fact. Because of this, the project reports every class
+by numeric ID, and the training configuration uses neutral placeholder names `class_00` to
+`class_34`. Chapter 10 describes a separate evidence-based investigation that recovered the meaning
+of two of the most common IDs without pretending that the full mapping is known.
+
+## 3.4 Image properties and domain
+
+Images range in size from 76 pixels to 8,660 pixels on their longest side, and are stored as JPEG,
+PNG, and in a few cases WebP or GIF. The mix of sizes is typical of a dataset assembled from web
+sources rather than captured by one camera. As a weak, non-authoritative hint about the domain, the
+image file names contain words such as *bed* (75 images), *bus* (69), *oven* (68), *manhole* (66),
+*waste* (65), *toothbrush* (62), *sign* (60), *barrier* (51), *toilet* (46), *chair* (41),
+*traffic* (41), *table* (35) and *stair* (33). The spread suggests a heterogeneous collection of
+indoor and street objects rather than a single narrow category. A file name does not tell us which
+class ID an object carries, so these counts are context only.
+
+## 3.5 Data quality problems found
+
+The read-only audit checked every label file and every image. The good news was that the annotation
+format itself was clean: 16,107 label files, zero malformed lines, zero out-of-range coordinates,
+zero boxes outside the image frame, zero empty label files, and zero images without a label. The
+problems were elsewhere.
+
+| Problem | Count | Why it matters |
+|:--|--:|:--|
+| Groups of byte-identical images | 727 (1,545 files) | Same picture counted more than once |
+| Duplicate groups spanning splits | 222 | Test images already seen in training |
+| Source-image groups from augmented copies | 639 (1,431 files) | Differently cropped/resized copies leak |
+| Duplicate groups with conflicting labels | 554 | Same image, different annotation |
+| Identical images with a different class ID | 7 | Direct label contradiction |
+| Identical images with different box geometry | 177 | Direct label contradiction |
+| Image pairs sharing one label stem | 15 | One image in each pair can never be trained |
+| Images in a format the trainer cannot read | 1 (.gif) | Would abort or be skipped |
+
+Table 2. Data quality findings from the source audit.
+
+The 222 cross-split duplicate groups are the most important entry in Table 2. If the same photograph
+appears in training and in the test set, the model can score well on the test set simply by
+remembering it, and the reported accuracy becomes meaningless. Removing this contamination was the
+first task of the preparation stage.
+
+# 4. Methodology
+
+## 4.1 Pipeline overview
+
+The work followed five stages, each of which produced an auditable artefact:
+
+1. **Read-only verification** of the source dataset (labels, images, duplication, leakage).
+2. **Staging** â€” a byte-for-byte copy with four format conversions, so that the source could be
+   fingerprinted before and after and proven unchanged.
+3. **Derived training copy** â€” a writable dataset with duplicates removed, splits repaired, and a
+   `data.yaml` written.
+4. **Visual audit** â€” contact sheets of real examples for every class, to make class identity
+   checkable by a human.
+5. **Training, evaluation and export** on the derived copy.
+
+The rule applied throughout was that the original dataset is evidence and must not change. A copy
+was used for training, and every change to that copy was logged.
+
+## 4.2 Staging and format conversion
+
+The staging step copied all 16,122 images and all 16,107 labels, preserving the batch and split
+structure exactly. Three files with a `.webp` extension actually contained JPEG data, and one was a
+genuine GIF. All four were decoded and re-encoded losslessly as PNG, giving 16,126 images in the
+staging copy. The originals were kept as well, so nothing was lost and no annotation was touched.
+This mattered because the training framework cannot read a GIF at all: without the conversion, that
+image would either abort the run or be silently skipped.
+
+Verification after staging confirmed 16,126 decodable images, unchanged label bytes, unchanged class
+IDs, unchanged coordinates, and zero overwrites. The source was then fingerprinted: 32,233 files
+were hashed before and after the whole preparation, and zero files changed.
+
+## 4.3 Duplicate detection and leakage removal
+
+Duplicates were detected on **decoded pixels**, not on file bytes. That choice matters: the same
+photograph saved as JPEG and as PNG, or saved twice at different JPEG quality, has different bytes
+but identical pixels. A byte-level hash would miss those pairs. Decoding every image and hashing the
+pixel array found 730 duplicate groups.
+
+Each group was then assigned to exactly one split, using the priority **test > val > train**. The
+reasoning is asymmetric: losing a test image weakens the measurement, while losing a training image
+costs almost nothing. In total, 823 redundant images were removed â€” 815 byte-identical and 8 that
+were re-encoded copies of an existing image. Of the 730 groups, 222 had members in more than one
+original split; those were the actual leaks, and after the reassignment no group spans two splits.
+
+Two known gaps remain. First, near-duplicates that are not pixel-identical â€” a crop of an image, a
+resize, an image with a watermark â€” cannot be caught this way. Second, where duplicate images
+carried conflicting annotations, the pipeline kept one representative label rather than deciding
+which annotation was correct. Both points are restated in Chapter 11.
+
+## 4.4 Split construction and configuration
+
+The cleaned copy contains 15,303 images and 21,944 boxes, split as shown in Table 3. The test split
+was left exactly as supplied (795 images, 1,220 boxes) apart from the removal of duplicates, so that
+the final score would be measured on the dataset owner's own held-out data.
+
+| Split | Images | Boxes | Average boxes per image |
+|:------|-------:|------:|------------------------:|
+| Train | 11,526 | 16,316 | 1.42 |
+| Validation | 2,982 | 4,408 | 1.48 |
+| Test | 795 | 1,220 | 1.53 |
+| **Total** | **15,303** | **21,944** | 1.43 |
+
+Table 3. The derived training dataset after duplicate removal.
+
+A `data.yaml` file was written with `nc: 35` and the placeholder names. A second file,
+`data_original.yaml`, points at the original split layout, so that the effect of cleaning could be
+compared later if required.
+
+## 4.5 Augmentation
+
+YOLO's default augmentation recipe was used, with two deliberate changes: geometric transforms that
+would distort an object's real proportions (rotation, shear, perspective) were left at zero, and
+mixup was disabled. Mosaic â€” which pastes four training images into one canvas â€” was kept at full
+strength, because it is the single most effective augmentation for small-object detection and it
+teaches the model that objects can appear at any scale and any position. Mosaic was switched off for
+the last ten epochs (`close_mosaic: 10`), a standard trick that lets the model finish on images that
+look like real photographs rather than collages.
+
+| Setting | Value | Effect |
+|:--|:--|:--|
+| HSV hue / saturation / value | 0.015 / 0.7 / 0.4 | Colour and lighting robustness |
+| Translation | 0.10 | Position robustness |
+| Scale | 0.50 | Object-size robustness |
+| Horizontal flip | 0.50 | Free extra data |
+| Mosaic | 1.00 | Four images combined per sample |
+| Random erasing | 0.40 | Occlusion robustness |
+| Rotation, shear, perspective | 0.0 | Avoids unrealistic distortion |
+| Mixup, cutmix | 0.0 | Not needed at this data size |
+
+Table 4. Augmentation settings used during training.
+
+## 4.6 Visual audit of the classes
+
+Because no class names exist, a visual audit was performed before training. For each of the 35
+classes, up to 20 unique examples were cropped from their label boxes and pasted into a single
+contact sheet, with the crop box outlined in green. Sampling was stratified by object size â€” seven
+small, seven medium and six large boxes per class â€” using a fixed random seed of 20261109, and only
+boxes of the target class were drawn. The result was 35 sheets covering 700 unique images. This gave
+a human-checkable view of what each numeric ID actually looks like, and it is the artefact used in
+Chapter 10 to interpret the two most frequent classes.
+
+## 4.7 Training and evaluation protocol
+
+Training used only the train split. The validation split drove model selection and early stopping.
+The test split was used exactly once, at the end, on the best checkpoint chosen by validation. This
+separation is what makes the test score in Chapter 7 credible. All training and evaluation ran in a
+single conda environment with fixed package versions, and a fixed random seed with deterministic
+algorithms enabled, so that the run can be repeated.
+
+# 5. Model Architecture
+
+## 5.1 Why YOLO11n
+
+The YOLO11 family is published in five sizes: nano, small, medium, large and extra-large. This
+project uses **nano**, the smallest. The reasoning is practical rather than aspirational. The target
+device is a small, battery-powered aid, not a server. A nano model at 640 Ã— 640 needs about
+6.6 GFLOPs per image and has 2.61 million parameters, so it can run on a laptop CPU, a phone or an
+embedded board. Choosing the smallest model also produces the most honest baseline: if a nano model
+already reaches a useful score, a larger model is a justified upgrade rather than a crutch.
+
+## 5.2 Overall structure
+
+YOLO11 is a single-stage, anchor-free detector with three parts.
+
+**Backbone.** A stack of convolutional blocks that progressively halves the spatial resolution and
+doubles the channel count, extracting features from fine texture to whole-object shape. YOLO11
+replaces the earlier C2f block with a **C3k2** block, a cheaper split-and-merge design that keeps
+gradient flow while reducing computation. The backbone ends with an **SPPF** (spatial pyramid
+pooling â€” fast) stage, which pools features at several kernel sizes and concatenates them, giving
+the model a cheap multi-scale view of the whole image.
+
+**Neck.** A path-aggregation network that fuses the three output levels of the backbone. Deep
+features carry strong semantic information ("this is a chair") but poor spatial precision; shallow
+features carry precise edges but weak semantics. The neck upsamples deep features and adds them to
+shallow ones, then downsamples again, so every output level has both.
+
+**Head.** A decoupled detection head. Classification and box regression use separate convolutional
+branches, because the two tasks prefer different features. The head is anchor-free: it predicts
+distances from a point to the four box edges instead of offsets from a set of predefined anchor
+boxes.
+
+| Property | Value |
+|:--|:--|
+| Variant | YOLO11n (nano) |
+| Parameters | 2,613,145 (2.61 M) |
+| Compute at 640 Ã— 640 | â‰ˆ 6.6 GFLOPs |
+| Output strides | 8, 16, 32 |
+| Prediction points at 640 | 80Ã—80 + 40Ã—40 + 20Ã—20 = 8,400 |
+| Output tensor | 1 Ã— 39 Ã— 8,400 (4 box values + 35 class scores) |
+| Anchor boxes | None (anchor-free) |
+| Box loss | CIoU + distribution focal loss |
+| Class loss | Binary cross-entropy |
+
+Table 5. Summary of the model actually trained.
+
+## 5.3 Output and loss
+
+The network produces a tensor of shape 1 Ã— 39 Ã— 8,400. For each of the 8,400 candidate points, four
+values describe the box edges and thirty-five values describe the class scores. There is no softmax
+across classes: each class score is an independent sigmoid, which allows overlapping labels and
+matches the binary cross-entropy loss used during training.
+
+Box regression uses a **distribution focal loss** (DFL). Instead of predicting a single distance to
+each edge, the model predicts a small probability distribution over a set of discrete distances and
+takes the expectation. This gives finer, more stable localisation, and it is one of the reasons
+YOLO11 boxes are tighter than earlier YOLO versions. The regression term is then refined with a
+CIoU-style overlap loss, which penalises boxes that are the right size but in the wrong place, or
+vice versa. Class assignment during training uses task-aligned assignment, which matches
+predictions to ground truth by a combination of classification confidence and box overlap rather
+than by a fixed IoU rule.
+
+## 5.4 Detection at inference
+
+At inference the raw tensor is decoded into boxes, low-confidence boxes are discarded, and
+non-maximum suppression removes duplicates that describe the same object. Three thresholds control
+this: the confidence threshold (default 0.25 for batch prediction, 0.35 for the webcam demo), the
+NMS IoU threshold (0.45), and a maximum of 100 detections per image. These are user-adjustable at
+run time, which is important because the right threshold depends on the scene: a quiet corridor and
+a busy street need different settings.
+
+# 6. Model Training
+
+## 6.1 Environment and hardware
+
+All training and evaluation ran on a single laptop. The GPU has 6 GB of memory, which is the real
+constraint behind the batch size: a larger batch would not fit at 640 Ã— 640 without reducing
+precision.
+
+| Component | Specification |
+|:--|:--|
+| GPU | NVIDIA GeForce RTX 4050 Laptop GPU, 6 GB |
+| CPU | 13th Gen Intel Core i7-13650HX |
+| RAM | 23.7 GB |
+| Operating system | Windows 11 Home |
+| Framework | Ultralytics 8.4.208 |
+| Deep-learning library | PyTorch 2.11.0 with CUDA 12.8 |
+| Other libraries | OpenCV 5.0, NumPy 2.4, Pillow 13.0, ONNX 1.23, ONNX Runtime 1.31 |
+| Mixed precision | Enabled (FP16 autocast) |
+
+Table 6. Training environment.
+
+## 6.2 Hyperparameters
+
+The model started from the official COCO-pretrained `yolo11n.pt` weights. Only the detection head was
+re-initialised for 35 classes; the backbone and neck began from learned features. No layers were
+frozen, so the whole network adapted to the new data.
+
+| Setting | Value | Reason |
+|:--|:--|:--|
+| Epochs | 60 (maximum) | Chosen to fit the available time |
+| Batch size | 16 | Largest that fits comfortably in 6 GB |
+| Input size | 640 Ã— 640 | Standard speed/accuracy balance |
+| Initial learning rate | 0.01 | Ultralytics default for fine-tuning |
+| Final LR factor | 0.01 | Linear decay to 1 % of the initial rate |
+| Momentum | 0.937 | Default; stable with the auto optimizer |
+| Weight decay | 0.0005 | Mild regularisation |
+| Warm-up | 3 epochs | Prevents an unstable first pass |
+| Optimiser | auto | Framework-selected |
+| Close mosaic | last 10 epochs | Finish on realistic images |
+| Early-stopping patience | 15 epochs | Stops if validation stops improving |
+| Data-loader workers | 2 | Stable on Windows |
+| RAM caching | Off | Dataset does not fit in memory |
+| Seed | 0, deterministic | Reproducibility |
+
+Table 7. Training hyperparameters.
+
+## 6.3 The training run
+
+The run completed all 60 epochs in 6,819 seconds â€” 1 hour 54 minutes, or about 114 seconds per
+epoch. Validation was computed after every epoch, and the best checkpoint was saved at **epoch 57**,
+with a validation mAP@50-95 of 0.6319. The final epoch produced 0.6304, slightly lower, which
+confirms that the model had genuinely converged rather than being cut off mid-improvement. Training
+losses fell steadily: box loss from 1.084 to 0.689, classification loss from 2.315 to 0.486, and
+distribution focal loss from 1.405 to 1.143. Validation losses fell in parallel, from 1.188 to
+0.882 (box) and from 1.764 to 0.755 (classification), so there was no sign of overfitting.
+
+Two earlier attempts are worth recording because they explain the final configuration. Both stopped
+during the first epoch when the Windows data-loading workers failed while the dataset was being
+cached into memory. Reducing the worker count to 2 and disabling RAM caching produced a run that
+completed without interruption. This is a mundane engineering detail, but it is the difference
+between a project that reports results and one that reports intentions.
+
+## 6.4 A note on the first epochs
+
+The validation curve does something that looks wrong at first glance. Epoch 1 already scores
+mAP@50-95 of 0.396, then epoch 5 *drops* to 0.279 before climbing again. This is expected. The
+pretrained COCO weights are good at finding generic objects, so the very first evaluation is
+flattered. But the classification head has just been re-initialised for 35 new classes, and the
+network must now learn a completely new label space while its backbone is also being adjusted. The
+temporary collapse is the cost of that adaptation. By epoch 20 the score had recovered to 0.542, and
+by epoch 40 to 0.621.
+
+# 7. Performance Evaluation
+
+## 7.1 Metrics used
+
+**IoU (Intersection over Union)** measures how well two boxes agree: the shared area divided by the
+combined area. A value of 1.0 means identical boxes, 0 means no overlap.
+
+**Precision** answers "of the boxes the model drew, how many were real?" and **recall** answers "of
+the real objects, how many did the model find?". The two trade off against each other: lowering the
+confidence threshold finds more objects but also invents more.
+
+**AP (average precision)** is the area under the precisionâ€“recall curve for a single class, so it
+summarises the whole trade-off in one number instead of picking a single threshold.
+
+**mAP@50** averages AP across classes with a lenient 0.50 IoU requirement. **mAP@50-95** averages
+over ten IoU thresholds from 0.50 to 0.95, so it rewards boxes that are tightly fitted, not merely
+in the right neighbourhood. On this project mAP@50-95 is treated as the primary score.
+
+## 7.2 Overall results
+
+| Split | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 |
+|:--|------:|------:|----------:|-------:|-------:|----------:|
+| Validation | 2,982 | 4,408 | 0.846 | 0.775 | 0.834 | 0.632 |
+| **Test** | **795** | **1,220** | **0.843** | **0.794** | **0.847** | **0.647** |
+
+Table 8. Overall detection performance on the cleaned dataset.
+
+Three things are worth noting. First, the test scores are slightly *higher* than the validation
+scores, not lower. That is the normal outcome when validation is used for checkpoint selection: the
+reported validation number is biased slightly downward by the epochs that were rejected, while the
+test split is a fresh sample. It is also a sign that the test images are, if anything, slightly
+easier. Second, precision (0.843) is higher than recall (0.794), which means the model is
+conservative: it draws relatively few false boxes, but it misses roughly one object in five. Third,
+the gap between mAP@50 (0.847) and mAP@50-95 (0.647) is about 0.20. That gap is the localisation
+cost â€” the model usually finds the right object, but its box edges are not always tight.
+
+## 7.3 Per-class performance
+
+All 35 classes were evaluated, each with at least 12 test boxes. The full table is in Appendix A;
+Table 9 shows the extremes.
+
+| Rank | Class | AP@50-95 | AP@50 | Precision | Recall | Test boxes |
+|:--|:--|--:|--:|--:|--:|--:|
+| 1 | class_32 | 0.904 | 0.991 | 0.913 | 0.996 | 74 |
+| 2 | class_21 | 0.874 | 0.995 | 1.000 | 0.998 | 38 |
+| 3 | class_29 | 0.817 | 0.899 | 0.879 | 0.879 | 33 |
+| 4 | class_12 | 0.802 | 0.933 | 0.751 | 0.893 | 28 |
+| 5 | class_23 | 0.792 | 0.846 | 0.895 | 0.816 | 38 |
+| 31 | class_24 | 0.528 | 0.787 | 0.791 | 0.725 | 40 |
+| 32 | class_27 | 0.457 | 0.880 | 0.838 | 0.852 | 27 |
+| 33 | class_03 | 0.371 | 0.610 | 0.855 | 0.538 | 33 |
+| 34 | class_09 | 0.318 | 0.531 | 0.583 | 0.491 | 37 |
+| 35 | class_06 | 0.239 | 0.571 | 0.827 | 0.514 | 28 |
+
+Table 9. The five strongest and five weakest classes on the test split.
+
+Class 27 is instructive. Its AP@50 is a healthy 0.880 and both precision and recall are above 0.83,
+yet its AP@50-95 is only 0.457. The model finds this object reliably but cannot place a tight box
+around it. That pattern usually means one of two things: the object has soft or ambiguous edges, or
+different annotators drew its boundary differently. Either way, the fix is annotation guidance, not
+a bigger model.
+
+Class 6 shows the opposite pattern: high precision (0.827) with low recall (0.514). When it does
+fire it is usually right, but it misses half the instances. Class 9 is weak on both counts (0.583
+precision, 0.491 recall), which suggests genuine visual difficulty or heavy label noise.
+
+## 7.4 Reading the evaluation curves
+
+Four plots accompany the evaluation and are reproduced in Chapter 10. The **precisionâ€“recall
+curve** shows precision as a function of recall for every class; a curve that stays near the top
+right corner means the class is easy. The **F1 curve** plots the harmonic mean against the
+confidence threshold, and its peak gives the best single operating point â€” useful when choosing a
+default confidence value. The **normalised confusion matrix** is the most diagnostic figure: the
+diagonal shows correct predictions, the last column shows missed objects, the last row shows false
+positives on background, and bright off-diagonal cells reveal pairs of classes the model cannot
+separate. Those pairs are worth investigating, because they are frequently annotation problems
+rather than model failures.
+
+## 7.5 Export validation
+
+The best checkpoint was exported to ONNX with a static 640 Ã— 640 input. The resulting file is
+10,696,956 bytes (10.2 MB) at opset 12. It was checked with the official ONNX checker and then run
+under ONNX Runtime, where a single frame took approximately 0.04 seconds on CPU. The exported graph
+reports an input of 1 Ã— 3 Ã— 640 Ã— 640 and an output of 1 Ã— 39 Ã— 8,400, which matches the architecture
+described in Chapter 5 exactly. This confirms that the model is not tied to the training framework
+and can be deployed in an ordinary application.
+
+# 8. Model Optimisation
+
+"Optimisation" here means anything that was changed to make the model better or more usable. Three
+kinds were applied: data-level, training-level and inference-level. It is important to be precise
+about what was and was not measured. Formal ablation â€” retraining the model once per change to
+isolate each effect â€” was not possible within the available compute budget of a single laptop GPU.
+What follows therefore describes measures that were applied, with the observed effect where one can
+be shown, and separates that from measures that are recommended but unproven.
+
+## 8.1 Data-level optimisation
+
+The largest single improvement to the credibility of the results came from cleaning, not from
+modelling. Removing 823 duplicate images and collapsing 222 cross-split duplicate groups means the
+reported test score cannot be inflated by memorised images. A rough estimate of the effect can be
+made from the audit: 222 groups touched the test split, and the test split contains only 795 images.
+Even if only a fraction of those were genuine train/test pairs, several percent of the test set
+could have been scored from memory. The cleaned score of 0.647 mAP@50-95 is therefore lower â€” and
+truer â€” than the score an unclean run would have produced.
+
+The class distribution was checked and found to be almost balanced (1.80 : 1), so no resampling,
+class weighting or focal-loss tuning was applied. That decision saved effort but has a consequence
+noted in Chapter 11: performance on a naturally imbalanced stream is unknown.
+
+## 8.2 Training-level optimisation
+
+| Measure | Setting | Observed or expected effect |
+|:--|:--|:--|
+| Transfer learning | COCO-pretrained `yolo11n.pt` | mAP@50-95 already 0.396 after one epoch |
+| Mosaic augmentation | 1.0 | Better small-object and scale robustness |
+| Close mosaic | Last 10 epochs | Box loss fell 0.844 â†’ 0.706 between epochs 50 and 57 |
+| Mixed precision | AMP enabled | Roughly halves memory use, faster epochs |
+| Linear LR decay | 0.01 â†’ 0.0001 | Smooth convergence, no late oscillation |
+| Warm-up | 3 epochs | Avoids a destructive first update |
+| Early stopping | Patience 15 | Would have stopped a run that had stalled |
+| Data-loader tuning | 2 workers, no caching | Turned a crashing run into a completed one |
+
+Table 10. Optimisation measures applied during training.
+
+The clearest measurable effect in Table 10 is the close-mosaic window. Between epoch 50 and epoch 57
+the training box loss fell from 0.844 to 0.706 while validation box loss fell from 0.894 to 0.881.
+Mosaic makes each training sample a collage of four images, which is excellent for generalisation
+but produces box statistics that do not match real photographs. Turning it off for the final ten
+epochs lets the model calibrate its box regression on realistic images, and the drop in loss at
+exactly that point is the expected signature.
+
+## 8.3 Inference-level optimisation
+
+Three knobs matter at run time, and all three are exposed to the user. The confidence threshold
+trades false positives against misses; the demo defaults to 0.35 because a cluttered scene produces
+many low-confidence boxes that make the display hard to read, while batch prediction defaults to
+0.25 to preserve recall. The input size trades speed against accuracy: dropping from 640 to 448
+roughly doubles frame rate and costs small-object accuracy. The NMS IoU threshold controls how
+aggressively overlapping boxes are merged, and 0.45 is a reasonable middle ground for objects that
+can legitimately stand close together.
+
+Export to ONNX with graph simplification removed the training framework from the deployment path
+entirely. At 10.2 MB and about 0.04 s per frame on CPU, the model is small enough to ship inside a
+desktop application and fast enough to be interactive without a GPU.
+
+## 8.4 Optimisations that were considered but not applied
+
+These are recorded so that the next stage has a clear starting point. Each is a candidate for a
+controlled experiment rather than a claim: training at 960 Ã— 960 instead of 640 (better for small
+objects, roughly 2.25Ã— the compute); swapping nano for the small variant (about three times the
+parameters, typically a few points of mAP); extending training beyond 60 epochs with a lower initial
+learning rate; merging visually confusable classes; mining hard negatives from false positives; and
+quantising the ONNX model to INT8 for embedded deployment.
+
+# 9. Application Development
+
+## 9.1 Design goals
+
+A trained model that nobody can run is not a result. Three interfaces were built, each aimed at a
+different question. The image tool answers "is this model accurate on my own photographs?". The
+video tool answers "does it hold up over time?". The webcam tool answers "what does it do in the
+room I am standing in right now?". All three share the same weights, the same thresholds and the
+same optional class-name file.
+
+## 9.2 The command-line inspector
+
+A single script, `check_model.py`, provides three sub-commands. `report` prints the overall and
+per-class scores as a table, with a short plain-language explanation of each metric.
+`predict --source <path>` runs the model on an image or a folder and writes two outputs: annotated
+images with boxes and confidences drawn on them, and a CSV file listing every box with its image
+name, class ID, optional class name, confidence and pixel coordinates. `class-sheet --class N`
+builds a contact sheet of real examples of one class ID, which is how a numeric label becomes a
+name.
+
+## 9.3 The live webcam demo
+
+`webcam_demo.py` opens the laptop camera, runs the detector on every frame and draws the result
+live. The overlay reports frames per second, the current confidence threshold, the inference size
+and the number of objects detected. Keys control the session without leaving the window.
+
+| Key | Action |
+|:--|:--|
+| `q` or `Esc` | Quit |
+| `s` | Save a screenshot of the annotated frame |
+| `+` / `-` | Raise / lower the confidence threshold |
+| `[` / `]` | Decrease / increase the inference size |
+
+Table 11. Controls available in the live demo.
+
+The camera is opened with the DirectShow backend first, then Media Foundation, then the default
+backend, because on Windows the choice of backend is the difference between a working camera and a
+black rectangle. If all three fail, the script prints concrete troubleshooting steps â€” close other
+applications using the camera, check the Windows privacy setting, try a different camera index â€”
+rather than a stack trace. The demo also supports `--source` for a video file and `--record` to
+write the annotated stream to an MP4.
+
+## 9.4 Class names without retraining
+
+Because the class-name mapping is metadata rather than knowledge, it can be added at display time.
+`class_names.json` holds 35 slots; any slot that is filled in replaces the placeholder in the
+webcam overlay and adds a `class_name` column to the CSV. The weights are untouched. This is
+deliberate: the model learns a fixed numeric label space, and names are a lookup table applied
+afterwards. Renaming a class therefore costs nothing and requires no retraining, which is important
+because the names are not known yet.
+
+## 9.5 Launchers and logging
+
+Two Windows batch files were written so that the tools can be started by double-clicking rather
+than by typing commands: `RUN_webcam.bat` and `RUN_report.bat`. The webcam launcher redirects all
+output to `checks/webcam/last_run.log` and, on failure, prints the log in the window and keeps the
+window open. This was added after an early run failed and the error message disappeared with the
+window; a tool that hides its own errors is worse than no tool.
+
+## 9.6 Artefacts produced
+
+| Artefact | Purpose |
+|:--|:--|
+| `runs/full_yolo11n_640_v3/weights/best.pt` | Best checkpoint (epoch 57), 5.24 MB |
+| `export/full_yolo11n_640_v3_best.onnx` | Deployment model, 10.2 MB, verified |
+| `evaluation/metrics_summary.json` | Machine-readable overall and per-class metrics |
+| `evaluation/per_class_test.csv` | Per-class test results |
+| `evaluation/test/confusion_matrix_normalized.png` | Class confusion analysis |
+| `evaluation/prediction_sheet.png` | Twelve annotated test predictions |
+| `class_names.json` | Editable class-name mapping |
+| `TRAINING_REPORT.md` | Full tabular report of the run |
+
+Table 12. Main project artefacts.
+
+# 10. Results and Discussion
+
+## 10.1 Headline result
+
+The trained model detects 35 classes at mAP@50 of 0.847 and mAP@50-95 of 0.647 on a cleaned test
+split of 795 images and 1,220 objects, with precision 0.843 and recall 0.794. Training took under
+two hours on a laptop GPU, and the exported model runs at about 0.04 seconds per frame on CPU. For a
+2.61-million-parameter model, these are solid numbers, and they are measured on data the model never
+saw.
+
+## 10.2 Training behaviour
+
+![Validation metrics and losses across the 60 training epochs. The early dip is the cost of re-initialising the classification head; the sharp improvement after epoch 50 coincides with mosaic being switched off.](<../model_training/runs/full_yolo11n_640_v3/results.png>){width=5.6in}
+
+The loss curves fall smoothly with no divergence and no upward turn at the end, which is the
+signature of a healthy run. Validation loss tracks training loss closely, so the model is not
+memorising the training set. The mAP curves flatten in the last ten epochs, which is why epoch 57
+was selected rather than epoch 60.
+
+## 10.3 Precisionâ€“recall behaviour
+
+![Precisionâ€“recall curves for the test split. The area under each curve is the per-class AP; the bold line is the mean over all 35 classes.](<../model_training/evaluation/test/BoxPR_curve.png>){width=5.2in}
+
+Most class curves sit high and to the right, meaning the model can reach high recall without
+sacrificing much precision. The curves that fall away early belong to the weak classes identified in
+Table 9 â€” the same classes that dominate the shortfall between mAP@50 and mAP@50-95.
+
+## 10.4 Where the model confuses classes
+
+![Normalised confusion matrix for the test split. The diagonal is correct classification, the last column is missed objects, and the last row is background predicted as an object.](<../model_training/evaluation/test/confusion_matrix_normalized.png>){width=5.0in}
+
+The diagonal is strong for most classes. The two visible weaknesses are a background column that is
+not fully dark â€” objects the model simply did not find, consistent with recall of 0.79 â€” and a small
+number of bright off-diagonal cells. These off-diagonal pairs are the most useful output of the
+whole evaluation, because they point at specific class pairs that the annotation may not
+distinguish consistently. The source audit supports that reading: seven pairs of byte-identical
+images carry a box with a different class ID, and 177 more disagree about box geometry. When the
+same pixels are labelled differently, no model can learn a consistent boundary.
+
+## 10.5 Qualitative results
+
+![Twelve test images with model predictions. Each box shows the class ID and confidence.](<../model_training/evaluation/prediction_sheet.png>){width=4.6in}
+
+The prediction sheet shows the behaviour a user actually sees. Detections on clear, well-lit,
+reasonably large objects are confident and tightly boxed. Failures cluster in three situations:
+objects at the edge of the frame that are partly cut off, clusters of similar objects where
+non-maximum suppression merges neighbours, and small distant objects where the object occupies only
+a few dozen pixels.
+
+## 10.6 Recovering the meaning of two class IDs
+
+Because the dataset has no names, an independent COCO-pretrained detector was run over real crops of
+each class as supporting evidence â€” not as proof, and not as a substitute for a human looking at the
+contact sheets. For **class 0** (930 boxes, one per image, tall and narrow, 28 % touching the bottom
+of the frame), the COCO detector reported *person* with a mean confidence of 0.77, and the label box
+matched the COCO person box at an IoU of 0.86 while covering 98 % of it. Class 0 is therefore a
+whole standing person. For **class 22** (602 boxes, roughly square, never touching a frame edge),
+the COCO detector again reported *person*, but this time the label box sat entirely *inside* the
+person box and covered only 23 % of it, centred horizontally in the upper third of the body. Class
+22 is therefore part of a person rather than a person â€” most consistent with something worn or
+carried on the upper body. Both findings are recorded as evidence, not as verified names, and the
+mapping remains a task for the dataset owner.
+
+## 10.7 Comparison with published figures
+
+It is tempting to compare 0.647 mAP@50-95 with the roughly 0.40 that YOLO11n reaches on COCO. That
+comparison would be misleading in both directions. COCO has 80 classes, heavy class imbalance, and
+many small and crowded objects; this dataset has 35 nearly balanced classes and an average of 1.4
+objects per image. A higher score here means the task is easier, not that the model is better. The
+only fair comparison is against another model trained on the same split with the same protocol,
+which is exactly what the next stage should do.
+
+# 11. Limitations
+
+**Class names are unknown.** This is the most serious limitation. The model outputs numbers 0â€“34,
+and only two of those numbers have even partial evidence behind them. Until a human maps every ID to
+an object type, the system cannot be described as a complete obstacle detector, because nobody can
+say what it is detecting.
+
+**Label noise remains.** The audit found 7 class conflicts and 177 geometry mismatches between
+byte-identical images, and 554 duplicate groups whose label files disagreed. The preparation
+pipeline kept one representative label per duplicate group rather than adjudicating which was
+correct. The 15 image pairs that share a single label stem also remain unresolved, so one image in
+each pair was never trained on.
+
+**Near-duplicate leakage cannot be detected by pixel hashing.** Crops, resizes, watermarks and
+re-encodings that alter pixels remain in the data and may still inflate scores slightly. The audit
+found 639 source-image groups from differently augmented copies, of which 292 spanned splits; the
+pixel-level cleaning removed what it could measure, not everything that exists.
+
+**Small test support for some classes.** Class 30 has only 12 test boxes, classes 31 and 33 have 18
+and 19, and classes 18 and 28 have 22 each. A single mistake moves these numbers by several
+percentage points, so their per-class scores should be read as indicative rather than precise.
+
+**The dataset's relevance to assistive navigation is unverified.** The file-name evidence points to
+a heterogeneous collection of indoor and street objects. That is plausible for navigation, but the
+dataset was not captured from a body-worn camera in the conditions a blind user would meet, and no
+class was confirmed as a pedestrian obstacle. Domain shift between this data and a real deployment
+is therefore likely and untested.
+
+**Only one training run was completed.** A single seed and a single configuration mean there is no
+estimate of run-to-run variance, and no controlled ablation isolating the effect of augmentation,
+input size or model size. The optimisation chapter reports measures applied, not effects proven.
+
+**The nano model has a ceiling.** A 2.61-million-parameter model at 640 Ã— 640 cannot resolve very
+small or heavily occluded objects. The recall of 0.794 on the test set is respectable, but one
+object in five is missed, and in an assistive context a missed obstacle is the dangerous error.
+
+**The live demo is a demonstration, not a product.** It runs on one camera at one resolution, with
+no depth information, no temporal smoothing across frames, no tracking, and no way to tell a distant
+object from a near one. Boxes can flicker between frames. It has not been tested with users, in poor
+lighting, or in motion, and it is not a safety device.
+
+**Platform dependence.** The launchers and camera handling are Windows-specific, and the trained
+environment pins specific library versions. Running elsewhere requires the Python scripts directly
+rather than the batch files.
+
+# 12. Conclusion and Future Scope
+
+## 12.1 Achievements
+
+This project delivered a complete, honest object-detection pipeline rather than a single trained
+file. The source dataset of 16,122 images was audited without modification, and every problem it
+contained was measured rather than assumed. A cleaned training copy of 15,303 images and 21,944
+boxes was built in which 823 duplicate images were removed and 222 cross-split duplicate groups were
+neutralised, with the source proven unchanged by hashing 32,233 files before and after.
+
+A YOLO11n detector was fine-tuned for 60 epochs in 1.89 hours on a laptop GPU, reaching mAP@50 of
+0.847 and mAP@50-95 of 0.647 on a test split that was never used for tuning, with precision 0.843
+and recall 0.794 across all 35 classes. The best checkpoint was exported to a verified 10.2 MB ONNX
+graph that runs at roughly 0.04 seconds per frame on CPU.
+
+Three tools were built on top of the model â€” batch image prediction with CSV output, a per-class
+contact-sheet generator, and a live webcam demo with on-screen thresholds and frame rate â€” along with
+double-click launchers and a log file for diagnosing failures. Class names can be added at any time
+through a JSON file without retraining, because names are display metadata rather than model
+knowledge.
+
+Most importantly, the reported numbers are trustworthy within their stated limits. The test split
+was held out, leakage was measured and removed, and the places where the result could be wrong are
+listed in Chapter 11 instead of being hidden.
+
+## 12.2 Future scope
+
+The immediate next step is not modelling at all: it is to sit down with the 35 contact sheets and
+write down what each class ID actually is. Until that mapping exists, no further accuracy claim
+means very much, and no user can be told what the system is warning them about.
+
+After that, the most valuable experiments are, in order of expected value per hour of compute:
+resolve the 7 class conflicts and the 15 duplicate-stem pairs, and re-check whether the weak classes
+improve without any change to the model; train at 960 Ã— 960 to attack the small-object failures
+behind the recall of 0.794; repeat the run with the small variant of YOLO11 to measure the accuracy
+cost of the nano choice; and run a second and third seed to establish how much of the difference
+between classes is real rather than run-to-run noise.
+
+Beyond accuracy, the path to a usable aid is temporal. A single frame is a weak signal, but ten
+frames with tracking give persistence, motion direction and a rough sense of approach. Combining
+detection with a monocular depth estimate would let the system say "closer" rather than merely
+"there". On the deployment side, quantising the ONNX model to INT8 and targeting a mobile runtime
+would move the work from a laptop to a phone.
+
+Finally, the only test that matters for an assistive device is a test with the people it is meant to
+help. A small structured study â€” a handful of participants, a fixed indoor route, and a comparison
+of detections against a human observer's list of obstacles â€” would say more about usefulness than
+another point of mAP.
+
+# 13. References
+
+1.  Bochkovskiy, A., Wang, C.-Y., & Liao, H.-Y. M. (2020). *YOLOv4: Optimal speed and accuracy of object detection.* arXiv:2004.10934.
+2.  Bradski, G. (2000). The OpenCV library. *Dr. Dobb's Journal of Software Tools.*
+3.  Girshick, R. (2015). Fast R-CNN. *Proceedings of the IEEE International Conference on Computer Vision (ICCV).*
+4.  Girshick, R., Donahue, J., Darrell, T., & Malik, J. (2014). Rich feature hierarchies for accurate object detection and semantic segmentation. *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR).*
+5.  He, K., Zhang, X., Ren, S., & Sun, J. (2016). Deep residual learning for image recognition. *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR).*
+6.  Jocher, G., Chaurasia, A., & Qiu, J. (2023). *Ultralytics YOLOv8.* https://docs.ultralytics.com
+7.  Jocher, G., Chaurasia, A., & Qiu, J. (2024). *Ultralytics YOLO11.* https://docs.ultralytics.com/models/yolo11/
+8.  Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). ImageNet classification with deep convolutional neural networks. *Advances in Neural Information Processing Systems, 25.*
+9.  LeCun, Y., Bottou, L., Bengio, Y., & Haffner, P. (1998). Gradient-based learning applied to document recognition. *Proceedings of the IEEE, 86*(11), 2278â€“2324.
+10. Li, X., Wang, W., Wu, L., Chen, S., Hu, X., Li, J., Tang, J., & Yang, J. (2020). Generalized focal loss: Learning qualified and distributed bounding boxes for dense object detection. *Advances in Neural Information Processing Systems, 33.*
+11. Lin, T.-Y., DollÃ¡r, P., Girshick, R., He, K., Hariharan, B., & Belongie, S. (2017a). Feature pyramid networks for object detection. *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR).*
+12. Lin, T.-Y., Goyal, P., Girshick, R., He, K., & DollÃ¡r, P. (2017b). Focal loss for dense object detection. *Proceedings of the IEEE International Conference on Computer Vision (ICCV).*
+13. Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., DollÃ¡r, P., & Zitnick, C. L. (2014). Microsoft COCO: Common objects in context. *European Conference on Computer Vision (ECCV).*
+14. Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., et al. (2019). PyTorch: An imperative style, high-performance deep learning library. *Advances in Neural Information Processing Systems, 32.*
+15. Redmon, J., Divvala, S., Girshick, R., & Farhadi, A. (2016). You Only Look Once: Unified, real-time object detection. *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR).*
+16. Redmon, J., & Farhadi, A. (2018). *YOLOv3: An incremental improvement.* arXiv:1804.02767.
+17. Ren, S., He, K., Girshick, R., & Sun, J. (2015). Faster R-CNN: Towards real-time object detection with region proposal networks. *Advances in Neural Information Processing Systems, 28.*
+18. Tian, Z., Shen, C., Chen, H., & He, T. (2019). FCOS: Fully convolutional one-stage object detection. *Proceedings of the IEEE International Conference on Computer Vision (ICCV).*
+19. Zheng, Z., Wang, P., Liu, W., Li, J., Ye, R., & Ren, D. (2020). Distance-IoU loss: Faster and better learning for bounding box regression. *Proceedings of the AAAI Conference on Artificial Intelligence, 34*(07).
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Appendix A â€” Full per-class test results {.unnumbered}
+
+All 35 classes, measured once on the held-out test split (795 images, 1,220 boxes). Classes are
+ordered by ID. Precision, recall and F1 use the confidence threshold that maximises F1 for each
+class; AP@50 and AP@50-95 integrate the full curve.
+
+| ID | Name | Precision | Recall | F1 | AP@50 | AP@50-95 | Boxes |
+|--:|:--|--:|--:|--:|--:|--:|--:|
+| 0 | class_00 | 0.754 | 0.741 | 0.747 | 0.782 | 0.542 | 58 |
+| 1 | class_01 | 0.885 | 0.875 | 0.880 | 0.898 | 0.790 | 40 |
+| 2 | class_02 | 0.872 | 0.759 | 0.812 | 0.843 | 0.549 | 54 |
+| 3 | class_03 | 0.855 | 0.538 | 0.660 | 0.610 | 0.371 | 33 |
+| 4 | class_04 | 0.791 | 0.788 | 0.789 | 0.865 | 0.682 | 33 |
+| 5 | class_05 | 0.790 | 0.580 | 0.669 | 0.654 | 0.552 | 39 |
+| 6 | class_06 | 0.827 | 0.514 | 0.634 | 0.571 | 0.239 | 28 |
+| 7 | class_07 | 0.889 | 0.690 | 0.777 | 0.805 | 0.614 | 29 |
+| 8 | class_08 | 0.718 | 0.759 | 0.738 | 0.770 | 0.631 | 29 |
+| 9 | class_09 | 0.583 | 0.491 | 0.533 | 0.531 | 0.318 | 37 |
+| 10 | class_10 | 0.914 | 0.763 | 0.832 | 0.887 | 0.773 | 28 |
+| 11 | class_11 | 0.906 | 0.885 | 0.895 | 0.943 | 0.760 | 26 |
+| 12 | class_12 | 0.751 | 0.893 | 0.816 | 0.933 | 0.802 | 28 |
+| 13 | class_13 | 0.789 | 0.765 | 0.777 | 0.828 | 0.594 | 34 |
+| 14 | class_14 | 0.708 | 0.714 | 0.711 | 0.801 | 0.613 | 28 |
+| 15 | class_15 | 0.861 | 0.833 | 0.847 | 0.937 | 0.742 | 24 |
+| 16 | class_16 | 0.757 | 0.813 | 0.784 | 0.864 | 0.638 | 32 |
+| 17 | class_17 | 0.782 | 0.833 | 0.807 | 0.875 | 0.686 | 48 |
+| 18 | class_18 | 0.889 | 0.818 | 0.852 | 0.897 | 0.704 | 22 |
+| 19 | class_19 | 0.870 | 0.841 | 0.855 | 0.895 | 0.711 | 44 |
+| 20 | class_20 | 0.866 | 0.706 | 0.778 | 0.853 | 0.607 | 51 |
+| 21 | class_21 | 1.000 | 0.998 | 0.999 | 0.995 | 0.874 | 38 |
+| 22 | class_22 | 0.965 | 0.837 | 0.896 | 0.959 | 0.753 | 33 |
+| 23 | class_23 | 0.895 | 0.816 | 0.854 | 0.846 | 0.792 | 38 |
+| 24 | class_24 | 0.791 | 0.725 | 0.756 | 0.787 | 0.528 | 40 |
+| 25 | class_25 | 0.831 | 0.681 | 0.749 | 0.834 | 0.587 | 47 |
+| 26 | class_26 | 0.849 | 0.769 | 0.807 | 0.830 | 0.547 | 39 |
+| 27 | class_27 | 0.838 | 0.852 | 0.845 | 0.880 | 0.456 | 27 |
+| 28 | class_28 | 0.952 | 0.955 | 0.953 | 0.953 | 0.711 | 22 |
+| 29 | class_29 | 0.879 | 0.879 | 0.879 | 0.899 | 0.817 | 33 |
+| 30 | class_30 | 0.744 | 0.971 | 0.843 | 0.875 | 0.659 | 12 |
+| 31 | class_31 | 0.971 | 1.000 | 0.985 | 0.995 | 0.772 | 18 |
+| 32 | class_32 | 0.913 | 0.996 | 0.953 | 0.991 | 0.904 | 74 |
+| 33 | class_33 | 0.973 | 1.000 | 0.986 | 0.995 | 0.757 | 19 |
+| 34 | class_34 | 0.830 | 0.714 | 0.768 | 0.766 | 0.553 | 35 |
+
+Table A1. Complete per-class results on the test split.

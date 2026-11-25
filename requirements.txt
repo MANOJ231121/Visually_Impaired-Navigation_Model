@@ -10,3 +10,6 @@ torchvision>=0.15.0,<1.0.0
 
 # Used by the training scripts to validate data.yaml before training starts.
 PyYAML>=6.0,<7.0
+
+# Offline text-to-speech used by the assistive/live_guide.py demo.
+pyttsx3>=2.90,<3.0

@@ -1,0 +1,13 @@
+# Core runtime
+ultralytics>=8.3          # YOLO11 inference + ByteTrack
+torch>=2.0                # install the CUDA build for GPU inference (see README)
+opencv-python>=4.8        # camera capture, drawing, video I/O
+numpy>=1.24
+pyttsx3>=2.90             # offline text-to-speech (SAPI5 on Windows)
+lap>=0.5.12               # assignment solver used by ByteTrack
+
+# Optional: direct SAPI fallback when pyttsx3 cannot start (Windows only)
+# pywin32>=306
+
+# Optional: DirectShow device names for --camera laptop / --camera droidcam
+# pygrabber
