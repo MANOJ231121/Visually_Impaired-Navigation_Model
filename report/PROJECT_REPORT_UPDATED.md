@@ -1,6 +1,6 @@
 ---
-title: "Assistive Navigation Obstacle Detection using YOLO11: A Comparative Study of YOLO11n, YOLO11s and YOLO11m"
-subtitle: "Dataset preparation, model-scale accuracy comparison, evaluation and real-time deployment of a 35-class object detector"
+title: "Assistive Navigation Obstacle Detection using YOLO11s: A Training-Run Study with YOLO11n and YOLO11m Baselines"
+subtitle: "Shared dataset preparation, the YOLO11s training run, evaluation and real-time DroidCam deployment of a 35-class object detector"
 author: "[Your Name] — [Roll Number]"
 date: "Department of [Department], [College]\n\nProject Guide: [Guide Name]\n\nNovember 2026"
 ---
@@ -19,38 +19,42 @@ that already spanned the train, validation and test splits. A cleaned, writable 
 without modifying a single source file: 823 redundant images were removed and cross-split duplicate
 groups were collapsed, leaving 15,303 images and 21,944 boxes.
 
-A YOLO11n model, pre-trained on COCO, was fine-tuned for 60 epochs at 640 × 640 on a laptop RTX 4050
-GPU in 1.89 hours. On the untouched test split it reached precision 0.843, recall 0.794, mAP@50
-0.847 and mAP@50-95 0.647, with all 35 classes evaluated individually. The same cleaned dataset was
-used for teammate-trained YOLO11s and YOLO11m checkpoints. Their supplied validation results are
-precision 0.8786, recall 0.8178, mAP@50 0.8719 and mAP@50-95 0.6800 for YOLO11s, and 0.539, 0.471,
-0.500 and 0.317 for YOLO11m. The corresponding held-out test values were not supplied and remain
-**PENDING**, so no test-split winner is claimed. Sections 6.5 and 7.5 give the completed training
-protocols, the validation comparison and the pending test cells. The best YOLO11n weights were
-exported to ONNX (10.2 MB, verified) and run at about 0.04 s per frame on CPU, while the higher
-accuracy YOLO11s checkpoint was used directly in the final DroidCam voice prototype without
-retraining. Three tools were built on top of the model: a batch image predictor that writes
-annotated images and a CSV of boxes, a class inspection tool that crops real examples of any class
-ID, and a live webcam demo. Names appear in the tables, figures and model output, while the numeric
-IDs remain the authoritative labels.
+A YOLO11s detector, pre-trained on COCO, was fine-tuned on this cleaned dataset at 640 × 640 for 60
+epochs, of which 55 used cosine learning-rate decay, on an RTX 3050 Laptop 4 GB GPU. The best
+checkpoint, `models/YOLO11s/best.pt`, reached precision 0.8786, recall 0.8178, mAP@50 0.8719 and
+mAP@50-95 0.6800 on the 2,982-image validation split, with all 35 classes evaluated. It is the main
+model of this report and was used directly in the final DroidCam voice prototype, so no retraining
+was needed for deployment. Its training run is documented with loss and metric curves, a validation
+confusion matrix and a sheet of real validation photographs with predicted boxes. YOLO11n and
+YOLO11m are retained as baselines on the same cleaned data: YOLO11n reached test mAP@50-95 0.647
+and was exported to a verified 10.2 MB ONNX graph, while the one-epoch YOLO11m checkpoint reached
+validation mAP@50-95 0.317. Held-out test metrics for the teammate checkpoints were not supplied and
+remain **PENDING**, so no test-split winner is claimed. Three tools were built on top of the model:
+a batch image predictor that writes annotated images and a CSV of boxes, a class inspection tool that
+crops real examples of any class ID, and a live webcam demo. Names appear in the tables, figures and
+model output, while the numeric IDs remain the authoritative labels.
 
 # Contents {.unnumbered}
 
 1.  Introduction
 2.  Literature Review
     - 2.8 Recent research (2024–2026)
-3.  Dataset Description
+3.  Dataset Description (shared by all runs)
 4.  Methodology
 5.  Model Architecture
-    - 5.5 Comparing YOLO11n, YOLO11s and YOLO11m
+    - 5.1 YOLO11s as the primary architecture
+    - 5.5 YOLO11n and YOLO11m reference points
 6.  Model Training
-    - 6.5 Collaborative training of YOLO11s and YOLO11m
+    - 6.1 YOLO11s training run
+    - 6.5 Baseline runs: YOLO11n and YOLO11m
 7.  Performance Evaluation
-    - 7.5 Model-scale accuracy comparison
+    - 7.2 Overall YOLO11s results
+    - 7.3 YOLO11s confusion and qualitative results
+    - 7.5 Model-scale validation comparison
 8.  Model Optimisation
 9.  Application Development
 10. Results and Discussion
-    - 10.7 Interpreting the model-scale comparison
+    - 10.7 YOLO11s results in context
     - 10.8 Result figures, workflow diagrams and launchers
 11. Limitations
 12. Conclusion and Future Scope
@@ -74,28 +78,31 @@ ahead and warns of what is in front.
 
 The first requirement of such a device is perception: taking a camera frame and producing a list of
 objects, each with a rectangular boundary and a category. This project builds that layer end to end —
-from a large annotated dataset, through careful preparation and a lightweight YOLO11 model, to
-measured performance, an exported model and tools a person can use: a batch image tester, a video
-tester and a live webcam demo.
+from the shared cleaned dataset, through a YOLO11s training run, to measured performance and an
+audible DroidCam prototype. YOLO11s is the primary model because it offers a practical balance between
+accuracy and laptop inference cost; YOLO11n and YOLO11m are kept as baseline reference points.
 
 The work spends as much effort on data honesty as on modelling. A detection score is only meaningful
 if the test images were never seen during training, and early inspection showed that this was not
-guaranteed. Removing that contamination in a copy of the data was a large part of the project.
+guaranteed. Removing that contamination in a copy of the data was a large part of the project, and the
+same derived split is used by the YOLO11s run and by both baselines.
 
 ## 1.2 Objectives
 
 - To audit the supplied 35-class dataset without altering any original file, and to quantify its
   label quality, duplication and split leakage.
-- To construct a clean, reproducible training copy in which duplicated images cannot leak between
-  train, validation and test.
-- To fine-tune YOLO11n, YOLO11s and YOLO11m at 640 × 640 on the same cleaned dataset and with the
-  same training recipe, so that accuracy can be compared across model scales.
-- To evaluate every variant on a test split never used for tuning, reporting overall and per-class
-  precision, recall, mAP@50 and mAP@50-95.
-- To export the model to a portable format and verify it outside the training framework.
+- To construct one clean, reproducible training copy in which duplicated images cannot leak between
+  train, validation and test; this shared dataset description is not repeated for each model.
+- To fine-tune YOLO11s at 640 × 640 as the main experiment and preserve its best checkpoint for
+  deployment.
+- To document the YOLO11s training run with loss and metric curves, validation precision–recall
+  behaviour, a confusion matrix and real validation photographs with predicted boxes.
+- To retain YOLO11n and YOLO11m as baselines on the same cleaned split, reporting their completed
+  validation results and keeping unsupplied test metrics **PENDING**.
 - To recover a display name for every class ID from independent evidence, so the results can be read
   without a lookup table.
-- To build usable interfaces for still images, video files and a live laptop camera.
+- To build usable interfaces for still images, video files and a DroidCam live feed with offline
+  spoken guidance.
 
 ## 1.3 Problem statement
 
@@ -107,12 +114,12 @@ genuinely never seen.
 
 ## 1.4 Scope
 
-The scope is limited to detection. No depth sensing, path planning, audio output or user trial is
-included. The nano model is the low-power baseline because the target is a small battery-powered aid,
-but the study is not confined to it: YOLO11s and YOLO11m are trained in parallel by teammates on the
-same split, with the same resolution, schedule and augmentation, to measure the accuracy gained for
-the extra parameters and inference cost. The report therefore presents the completed YOLO11n result
-and a model-scale comparison framework for YOLO11s and YOLO11m.
+The main experimental scope is the YOLO11s detection run and its use in a research prototype. The
+shared dataset preparation is described once in Chapters 3 and 4; Chapters 5 to 7 and 10 then follow
+the YOLO11s checkpoint. YOLO11n is the low-power baseline and YOLO11m the larger reference model,
+trained by teammates on the same cleaned split but with their own documented schedules. Calibrated
+depth, path planning and a user trial are outside the scope; the “20 metres ahead” phrase in the
+final launcher is an explicit demonstration override, not a sensor measurement.
 
 # 2. Literature Review
 
@@ -223,6 +230,10 @@ only in the foundational part of the reference list where they explain ideas tha
 builds on; the evidence base for the current state of the field is the 2024–2026 list.
 
 # 3. Dataset Description
+
+This chapter is common to every model in the study. The YOLO11s run, the YOLO11n baseline and the
+YOLO11m reference checkpoint all consume the same cleaned `data.yaml` described in Chapter 4, so the
+dataset is not re-described for each model below.
 
 ## 3.1 Source and structure
 
@@ -369,7 +380,17 @@ owner's own held-out data.
 | Test | 795 | 1,220 | 1.53 |
 | **Total** | **15,303** | **21,944** | 1.43 |
 
-Table 3. The derived training dataset after duplicate removal.
+Table 3. The derived training dataset after duplicate removal. This is the exact split used by the
+YOLO11s training run and by both baseline checkpoints.
+
+The real validation photographs below are drawn from that same split. The boxes are predictions made
+by the final `models/YOLO11s/best.pt` checkpoint, not ground-truth annotations, so the sheet shows
+what the deployed model actually sees.
+
+![Six real validation photographs with boxes predicted by the final YOLO11s checkpoint. Each label gives the numeric class ID, the recovered display name and the confidence.](figures/yolo11s_dataset_samples.jpg){width=6.3in}
+
+*Figure 3a. YOLO11s predictions on validation images from the cleaned dataset, generated by
+`report/make_yolo11s_report_figures.py`.*
 
 A `data.yaml` was written with `nc: 35` and the placeholder names, plus a `data_original.yaml`
 pointing at the original layout so the effect of cleaning could be compared later.
@@ -415,15 +436,16 @@ be repeated.
 
 # 5. Model Architecture
 
-## 5.1 Why compare YOLO11n, YOLO11s and YOLO11m
+## 5.1 YOLO11s as the primary architecture
 
-YOLO11 is published in five detection sizes. This project concentrates on the three most practical
-for an assistive prototype: **nano** as the low-power baseline, **small** as the balanced option and
-**medium** as the accuracy-oriented option. Nano needs about 6.6 GFLOPs per image with 2.61 million
-parameters at 640 × 640, so it can run on a laptop CPU or an embedded board. Small and medium cost
-substantially more compute but are reported by Ultralytics to reach higher COCO accuracy (Jocher &
-Qiu, 2024). Comparing all three on the *same* cleaned dataset is the only way to decide whether the
-extra cost is worth it for this particular 35-class problem.
+YOLO11 is published in five detection sizes. This project selects **small (YOLO11s)** as the primary
+architecture because it offers a practical balance for a laptop-based assistive prototype: the final
+checkpoint has 9,426,345 parameters and about 21.5 GFLOPs at 640 × 640, while still reaching the
+highest validation accuracy of the three models tested here. **Nano (YOLO11n)** is retained as the
+low-power baseline and **medium (YOLO11m)** as the larger reference point. All three share the same
+anchor-free, decoupled-head design; only width, depth and channel capacity change. The dataset is
+common, so the architecture chapter now describes YOLO11s first and treats the other two scales as
+comparisons.
 
 ## 5.2 Overall structure
 
@@ -446,9 +468,9 @@ distances from a point to the four box edges rather than offsets from predefined
 
 | Property | Value |
 |:--|:--|
-| Variant | YOLO11n (nano) |
-| Parameters | 2,613,145 (2.61 M) |
-| Compute at 640 × 640 | ≈ 6.6 GFLOPs |
+| Variant | YOLO11s (small) |
+| Parameters | 9,426,345 (9.43 M) |
+| Compute at 640 × 640 | ≈ 21.5 GFLOPs (fused checkpoint summary) |
 | Output strides | 8, 16, 32 |
 | Prediction points at 640 | 80×80 + 40×40 + 20×20 = 8,400 |
 | Output tensor | 1 × 39 × 8,400 (4 box values + 35 class scores) |
@@ -456,7 +478,7 @@ distances from a point to the four box edges rather than offsets from predefined
 | Box loss | CIoU + distribution focal loss |
 | Class loss | Binary cross-entropy |
 
-Table 5. Summary of the YOLO11n architecture trained in this project.
+Table 5. Summary of the YOLO11s architecture used in the main training run.
 
 ## 5.3 Output and loss
 
@@ -479,7 +501,7 @@ confidence (0.25 for batch prediction, 0.35 for the webcam demo), NMS IoU (0.45)
 100 detections per image. All are adjustable at run time, which matters because a quiet corridor and
 a busy street need different settings.
 
-## 5.5 Comparing YOLO11n, YOLO11s and YOLO11m
+## 5.5 YOLO11n and YOLO11m reference points
 
 All three variants share the same anchor-free, decoupled-head design, the same three output strides
 and the same 35-class output layer; only the width, depth and channel capacity of the backbone and
@@ -495,82 +517,77 @@ neck change. Ultralytics' official COCO reference values illustrate the scale of
 Table 5a. Official COCO reference values for the three YOLO11 scales. These are *not* results on
 this project's dataset; they only motivate the comparison.
 
-The important consequence for this project is that a larger model is not automatically better for an
-assistive aid. Medium is roughly eight times the compute of nano in the official benchmark, so it is
-justified only if it produces a meaningful accuracy gain on the cleaned split and still meets the
-latency budget. Sections 6.5 and 7.5 describe how that question is being tested.
+These COCO values are background only. On this project's cleaned validation split, YOLO11s actually
+leads both references, while YOLO11m is held back by its one-epoch schedule. Sections 6.5 and 7.5
+report those measured baseline runs and keep the held-out test cells **PENDING** where no teammate
+evaluation was supplied.
 
 # 6. Model Training
 
-## 6.1 Environment and hardware
+## 6.1 YOLO11s environment and hardware
 
-The completed YOLO11n run used a single laptop. The 6 GB GPU is the real constraint behind the
-batch size: a larger batch would not fit at 640 × 640 without reducing precision. The teammate-led
-YOLO11s and YOLO11m runs use the same cleaned dataset and the same software environment.
+The main YOLO11s run used a laptop GPU with 4 GB of video memory; that limit is why the batch size
+is 8 rather than 16. The exact documented stack is given in Table 6. The baseline environments differ
+and are summarised separately in Section 6.5.
 
 | Component | Specification |
 |:--|:--|
-| GPU | NVIDIA GeForce RTX 4050 Laptop GPU, 6 GB |
-| CPU / RAM | Intel Core i7-13650HX / 23.7 GB |
-| Operating system | Windows 11 Home |
-| Framework | Ultralytics 8.4.208 |
-| Deep-learning library | PyTorch 2.11.0 with CUDA 12.8 |
-| Other libraries | OpenCV 5.0, NumPy 2.4, Pillow 13.0, ONNX 1.23, ONNX Runtime 1.31 |
-| Mixed precision | Enabled (FP16 autocast) |
+| GPU | NVIDIA GeForce RTX 3050 Laptop GPU, 4 GB |
+| Device | `cuda:0` |
+| Python | 3.12.0 |
+| Framework | Ultralytics 8.4.32 |
+| Deep-learning library | PyTorch 2.5.1+cu121 |
+| CUDA | 12.1 |
 
-Table 6. Training environment.
+Table 6. Documented environment of the YOLO11s training run.
 
-## 6.2 Hyperparameters
+## 6.2 YOLO11s hyperparameters
 
-Each run started from the corresponding official COCO-pretrained checkpoint — `yolo11n.pt`,
-`yolo11s.pt` or `yolo11m.pt`. Only the detection head was re-initialised for 35 classes; backbone and
-neck began from learned features, and no layers were frozen, so the whole network adapted to the new
-data. Hyperparameters were kept identical across scales so that any accuracy difference is
-attributable to model capacity rather than to a different recipe.
+YOLO11s started from the official COCO-pretrained `yolo11s.pt`. The detection head was re-initialised
+for 35 classes while the backbone and neck began from learned features, and no layers were frozen, so
+the whole network adapted to the cleaned dataset. Only values recorded in the supplied model
+documentation are claimed; unsupplied settings are not guessed.
 
 | Setting | Value | Reason |
 |:--|:--|:--|
-| Epochs | 60 (maximum) | Chosen to fit the available time |
-| Batch size | 16 | Largest that fits comfortably in 6 GB |
+| Base weights | `yolo11s.pt` | Transfer learning from COCO |
+| Epochs | 60 total, 55 with cosine decay | Full schedule with a smooth learning-rate tail |
+| Batch size | 8 | Largest documented setting for 4 GB VRAM |
 | Input size | 640 × 640 | Standard speed/accuracy balance |
-| Initial learning rate | 0.01, decaying to 1 % | Ultralytics default for fine-tuning |
-| Momentum / weight decay | 0.937 / 0.0005 | Stable defaults |
-| Warm-up | 3 epochs | Prevents an unstable first pass |
-| Close mosaic | Last 10 epochs | Finish on realistic images |
-| Early-stopping patience | 15 epochs | Stops if validation stalls |
-| Data-loader workers | 2, no RAM cache | Stable on Windows |
-| Seed | 0, deterministic | Reproducibility |
+| Learning-rate schedule | Cosine annealing enabled | Stabilises the final epochs |
+| Optimizer | Auto / AdamW | Recorded in the model README |
+| Close mosaic | Last 10 epochs | Finish on realistic photographs |
+| Device | `cuda:0` | Single-GPU training |
 
-Table 7. Training hyperparameters.
+Table 7. Documented YOLO11s hyperparameters.
 
-## 6.3 The training run
+## 6.3 The YOLO11s training run
 
-The YOLO11n run completed all 60 epochs in 6,819 seconds — 1 hour 54 minutes, about 114 seconds per epoch.
-Validation was computed after every epoch and the best checkpoint was saved at **epoch 57**, with
-validation mAP@50-95 of 0.6319. The final epoch gave 0.6304, slightly lower, confirming the model had
-converged rather than being cut off mid-improvement. Training losses fell steadily: box 1.084 to
-0.689, classification 2.315 to 0.486, distribution focal 1.405 to 1.143. Validation losses fell in
-parallel, so there was no sign of overfitting.
+The run completed all 60 epochs and produced `models/YOLO11s/best.pt`. Validation was computed
+during training and the best checkpoint reached precision 0.8786, recall 0.8178, mAP@50 0.8719 and
+mAP@50-95 0.6800 on the 2,982-image validation split. That checkpoint is the one loaded by the
+DroidCam launchers; no retraining was required for the final prototype. The wall-clock training time
+was not supplied and is therefore not estimated here.
 
-Two earlier attempts are worth recording. Both stopped during the first epoch when the Windows
-data-loading workers failed while caching the dataset into memory. Reducing the worker count to 2 and
-disabling RAM caching produced a run that completed without interruption.
+![Training losses and validation metrics across the YOLO11s run, copied from the final checkpoint directory.](figures/yolo11s_results.png){width=5.6in}
 
-## 6.4 A note on the first epochs
+*Figure 6a. YOLO11s training curves from `models/YOLO11s/results.png`.*
 
-The validation curve looks wrong at first glance: epoch 1 already scores 0.396 mAP@50-95, epoch 5
-*drops* to 0.279, then it climbs again. This is expected. Pretrained COCO weights are good at finding
-generic objects, so the first evaluation is flattered, while the re-initialised head must learn 35
-new classes and the backbone is adjusting at the same time. By epoch 20 the score had recovered to
-0.542 and by epoch 40 to 0.621.
+## 6.4 Reading the YOLO11s curves
 
-## 6.5 Collaborative training of YOLO11s and YOLO11m
+The curve figure is the record of the run: training losses fall and the validation metrics rise as the
+35-class head adapts, with the cosine tail and the ten-epoch mosaic close shaping the final part of
+training. Exact epoch-by-epoch values are not transcribed into prose because they are not supplied as
+a table; the plotted figure is retained so the progression can be inspected directly. The checkpoint
+selected by validation is the one used for evaluation and deployment.
 
-To avoid confusing model size with data quality, the YOLO11s and YOLO11m experiments were run by
-teammates on the same derived dataset and the same 640 × 640 input, although their schedules differ:
-YOLO11s used the full 60-epoch schedule, while YOLO11m was trained for one epoch on a 4 GB laptop GPU.
-The table records the completed protocol taken from the supplied model documentation. The remaining
-**PENDING** entries apply only to the held-out test split, not to training or validation.
+## 6.5 Baseline runs: YOLO11n and YOLO11m
+
+The two baseline checkpoints were trained on the same derived dataset and the same 640 × 640 input,
+but with their own schedules. YOLO11n is the low-power run completed in this project; YOLO11m is the
+teammate reference trained for one epoch on the same 4 GB class of laptop GPU as YOLO11s. The table
+records the completed protocol. The remaining **PENDING** entries apply only to the held-out test
+split, not to training or validation.
 
 | Model | Trained by | Status | Epochs | Img size | Batch | Device | Checkpoint |
 |:--|:--|:--|--:|--:|--:|:--|:--|
@@ -580,6 +597,14 @@ The table records the completed protocol taken from the supplied model documenta
 
 Table 7a. Completed training protocol for the three model scales. YOLO11s also used a ten-epoch
 mosaic close; YOLO11m trained in 14.1 minutes with AMP enabled.
+
+For completeness, the YOLO11n baseline completed 60 epochs in 6,819 seconds — 1 hour 54 minutes — on
+a RTX 4050 Laptop 6 GB GPU. Validation was computed every epoch and the best checkpoint was saved at
+epoch 57 with validation mAP@50-95 of 0.6319; the final epoch scored 0.6304. Two earlier attempts
+stopped in the first epoch because Windows data-loading workers failed while caching the dataset;
+reducing the worker count to 2 and disabling RAM caching produced the completed run. The early dip in
+its validation curve is the cost of re-initialising the 35-class head while the COCO-pretrained
+backbone adjusts, not a failed run.
 
 The evaluation protocol is shared: validation drives checkpoint selection, and the held-out test
 split is intended to be evaluated once on each best checkpoint. Precision, recall and F1 are reported
@@ -602,56 +627,50 @@ one number instead of picking a threshold. **mAP@50** averages AP across classes
 IoU requirement; **mAP@50-95** averages over ten thresholds from 0.50 to 0.95, so it rewards boxes
 that are tightly fitted rather than merely in the right neighbourhood.
 
-## 7.2 Overall YOLO11n results
+## 7.2 Overall YOLO11s results
 
 | Split | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 |
 |:--|------:|------:|----------:|-------:|-------:|----------:|
-| Validation | 2,982 | 4,408 | 0.846 | 0.775 | 0.834 | 0.632 |
-| **Test** | **795** | **1,220** | **0.843** | **0.794** | **0.847** | **0.647** |
+| **Validation** | **2,982** | **4,408** | **0.8786** | **0.8178** | **0.8719** | **0.6800** |
+| Test | 795 | 1,220 | **PENDING** | **PENDING** | **PENDING** | **PENDING** |
 
-Table 8. Overall YOLO11n detection performance on the cleaned dataset.
+Table 8. Overall YOLO11s detection performance on the cleaned dataset. The validation row is the
+documented result for `models/YOLO11s/best.pt`; the test row is left visible rather than guessed.
 
-Three things are worth noting. Test scores are slightly *higher* than validation scores because
-validation selected the checkpoint, so its number is biased downward by the rejected epochs while
-test is a fresh sample. Precision exceeds recall, so the model is conservative — few false boxes,
-but roughly one object in five missed. And the 0.20 gap between mAP@50 and mAP@50-95 is the
-localisation cost: the model usually finds the right object, but its box edges are not always tight.
+The deployed checkpoint finds about four out of five annotated objects and produces very few false
+boxes. Precision (0.8786) is slightly above recall (0.8178), so it is conservative: a missed obstacle
+is still more likely than an invented one. The 0.19 gap between mAP@50 and mAP@50-95 is the
+localisation cost — the right object is usually found, but its box edges are not always tight enough
+for the stricter thresholds. Because this is the validation split used for checkpoint selection, the
+number is a model-selection result, not a final held-out claim.
 
-## 7.3 Per-class performance
+## 7.3 YOLO11s confusion and qualitative results
 
-All 35 classes were evaluated, each with at least 12 test boxes. The full table is in Appendix A;
-Table 9 shows the extremes.
+![Normalised confusion matrix for the YOLO11s validation run over the 35 numeric class IDs, copied from the final checkpoint directory.](figures/yolo11s_val_confusion_matrix.png){width=5.4in}
 
-| Rank | Class | AP@50-95 | AP@50 | Precision | Recall | Test boxes |
-|:--|:--|--:|--:|--:|--:|--:|
-| 1 | 32 mobile phone | 0.904 | 0.991 | 0.913 | 0.996 | 74 |
-| 2 | 21 book | 0.874 | 0.995 | 1.000 | 0.998 | 38 |
-| 3 | 29 trash can | 0.817 | 0.899 | 0.879 | 0.879 | 33 |
-| 4 | 12 bicycle | 0.802 | 0.933 | 0.751 | 0.893 | 28 |
-| 5 | 23 stop sign | 0.792 | 0.846 | 0.895 | 0.816 | 38 |
-| 31 | 24 car | 0.528 | 0.787 | 0.791 | 0.725 | 40 |
-| 32 | 27 stairs | 0.457 | 0.880 | 0.838 | 0.852 | 27 |
-| 33 | 3 knife | 0.371 | 0.610 | 0.855 | 0.538 | 33 |
-| 34 | 9 fork | 0.318 | 0.531 | 0.583 | 0.491 | 37 |
-| 35 | 6 spoon | 0.239 | 0.571 | 0.827 | 0.514 | 28 |
+*Figure 7a. YOLO11s validation confusion matrix from
+`models/YOLO11s/confusion_matrix.png`.*
 
-Table 9. The five strongest and five weakest classes on the test split.
+The diagonal is strong for most IDs. The visible off-diagonal cells are the useful part: they show
+which pairs of real objects the model still confuses, and they should be read together with the
+annotation audit rather than treated as proof of a model bug. Seven pairs of byte-identical images
+carry boxes with different class IDs, and 177 more disagree about box geometry, so some confusions are
+inherited from the labels. The figure uses numeric IDs; the recovered names in `class_names.json` are
+display metadata only and do not change what the checkpoint learned.
 
-Stairs (class 27) are instructive: AP@50 is a healthy 0.880 and both precision and recall exceed
-0.83, yet AP@50-95 is only 0.457. The model finds this object reliably but cannot place a tight box
-around it, which usually means either soft object edges or annotators drawing the boundary
-differently. The fix is annotation guidance, not a bigger model. Spoon (class 6) shows the opposite
-pattern, high precision with low recall: when it fires it is usually right, but it misses half the
-instances. Fork (class 9) is weak on both counts, suggesting genuine visual difficulty or heavy label
-noise.
+The six real validation photographs in Figure 3a show the same model in a more intuitive form. Boxes
+are predictions from the final checkpoint, with confidences from 0.70 to 0.92, covering person, chair,
+bottle, trash can, sink and car. These are qualitative examples, not a substitute for the metrics
+above.
 
 ## 7.4 Export validation
 
-The best checkpoint was exported to ONNX with a static 640 × 640 input, producing a 10,696,956-byte
-(10.2 MB) file at opset 12. It passed the official ONNX checker and ran under ONNX Runtime at about
-0.04 seconds per frame on CPU. The graph reports an input of 1 × 3 × 640 × 640 and an output of
-1 × 39 × 8,400, matching the architecture in Chapter 5 exactly, which confirms the model is not tied
-to the training framework.
+The YOLO11n baseline checkpoint was exported to ONNX with a static 640 × 640 input, producing a
+10,696,956-byte (10.2 MB) file at opset 12. It passed the official ONNX checker and ran under ONNX
+Runtime at about 0.04 seconds per frame on CPU. The graph reports an input of 1 × 3 × 640 × 640 and
+an output of 1 × 39 × 8,400, matching the shared YOLO11 output structure in Chapter 5. This export is
+kept as a portability demonstration; the final DroidCam prototype uses the YOLO11s PyTorch checkpoint
+directly.
 
 ## 7.5 Model-scale accuracy comparison
 
@@ -688,6 +707,40 @@ intervals should be inspected before claiming that a larger model is better. The
 also report inference time on the same hardware, because the official COCO speed figures in Table 5a
 will not transfer exactly to this 35-class model or to a student laptop.
 
+## 7.6 Baseline detail: YOLO11n
+
+The YOLO11n numbers are kept for reference, but they are not the deployed model. Its test score is the
+only completed held-out evaluation in the project.
+
+| Split | Images | Boxes | Precision | Recall | mAP@50 | mAP@50-95 |
+|:--|------:|------:|----------:|-------:|-------:|----------:|
+| Validation | 2,982 | 4,408 | 0.846 | 0.775 | 0.834 | 0.632 |
+| **Test** | **795** | **1,220** | **0.843** | **0.794** | **0.847** | **0.647** |
+
+Table 9a. Overall YOLO11n detection performance on the cleaned dataset.
+
+Its strongest and weakest held-out classes are listed below. They indicate where the small baseline
+struggles; they are not a per-class evaluation of YOLO11s.
+
+| Rank | Class | AP@50-95 | AP@50 | Precision | Recall | Test boxes |
+|:--|:--|--:|--:|--:|--:|--:|
+| 1 | 32 mobile phone | 0.904 | 0.991 | 0.913 | 0.996 | 74 |
+| 2 | 21 book | 0.874 | 0.995 | 1.000 | 0.998 | 38 |
+| 3 | 29 trash can | 0.817 | 0.899 | 0.879 | 0.879 | 33 |
+| 4 | 12 bicycle | 0.802 | 0.933 | 0.751 | 0.893 | 28 |
+| 5 | 23 stop sign | 0.792 | 0.846 | 0.895 | 0.816 | 38 |
+| 31 | 24 car | 0.528 | 0.787 | 0.791 | 0.725 | 40 |
+| 32 | 27 stairs | 0.457 | 0.880 | 0.838 | 0.852 | 27 |
+| 33 | 3 knife | 0.371 | 0.610 | 0.855 | 0.538 | 33 |
+| 34 | 9 fork | 0.318 | 0.531 | 0.583 | 0.491 | 37 |
+| 35 | 6 spoon | 0.239 | 0.571 | 0.827 | 0.514 | 28 |
+
+Table 9b. Five strongest and five weakest YOLO11n classes on the test split.
+
+Stairs (class 27) are instructive: AP@50 is healthy but AP@50-95 is much lower, so the object is found
+without a tight box. Spoon (class 6) shows high precision with low recall. These are label and
+small-object problems that a larger model does not automatically solve.
+
 # 8. Model Optimisation
 
 "Optimisation" here means anything changed to make the model better or more usable, at data,
@@ -710,23 +763,21 @@ was applied; that leaves performance on an imbalanced stream unknown.
 
 | Measure | Setting | Observed or expected effect |
 |:--|:--|:--|
-| Transfer learning | COCO-pretrained `yolo11n.pt` | mAP@50-95 already 0.396 after one epoch |
-| Mosaic augmentation | 1.0 | Better small-object and scale robustness |
-| Close mosaic | Last 10 epochs | Box loss fell 0.844 → 0.706 between epochs 50 and 57 |
-| Mixed precision | AMP enabled | Roughly halves memory use, faster epochs |
-| Linear LR decay | 0.01 → 0.0001 | Smooth convergence, no late oscillation |
-| Warm-up | 3 epochs | Avoids a destructive first update |
-| Early stopping | Patience 15 | Would stop a run that had stalled |
-| Data-loader tuning | 2 workers, no caching | Turned a crashing run into a completed one |
+| Transfer learning | COCO-pretrained `yolo11s.pt` | 35-class head adapted from learned features |
+| Mosaic augmentation | Default strength | Better small-object and scale robustness |
+| Close mosaic | Last 10 epochs | Finish on realistic photographs |
+| Cosine learning rate | Enabled for 55 epochs | Smooth final convergence |
+| Batch size | 8 | Largest documented setting for the 4 GB GPU |
+| Validation selection | Best checkpoint retained | Produced `models/YOLO11s/best.pt` |
 
-Table 10. Optimisation measures applied during training.
+Table 10. Documented optimisation measures in the YOLO11s training run. Baseline-specific
+data-loader tuning is described in Section 6.5.
 
-The clearest measurable effect is the close-mosaic window: between epochs 50 and 57 training box loss
-fell from 0.844 to 0.706 while validation box loss fell from 0.894 to 0.881. Mosaic makes each
-training sample a collage of four images, which is excellent for generalisation but produces box
-statistics that do not match real photographs; turning it off for the last ten epochs lets the model
-calibrate box regression on realistic images, and the drop at exactly that point is the expected
-signature.
+The close-mosaic window is the most useful documented choice. Mosaic makes each training sample a
+collage of four images, which helps small-object generalisation but produces box statistics that do
+not match real photographs; switching it off for the last ten epochs lets the model finish on
+realistic images. The epoch-by-epoch evidence is retained in Figure 6a rather than transcribed as
+numbers that were not supplied in a table.
 
 ## 8.3 Inference-level optimisation
 
@@ -760,9 +811,10 @@ an image or folder and writes annotated images plus a CSV listing every box with
 class ID, optional class name, confidence and pixel coordinates. `class-sheet --class N` builds a
 contact sheet of real examples of one class ID, which is how a numeric label was turned into a name.
 
-## 9.3 The live webcam demo
+## 9.3 The YOLO11s live demo
 
-`webcam_demo.py` opens the laptop camera, runs the detector on every frame and draws the result live.
+`webcam_demo.py` opens the laptop camera, runs the deployed YOLO11s detector on every frame and draws
+the result live.
 The overlay reports frames per second, the confidence threshold, the inference size and the number of
 objects detected, and keys control the session without leaving the window.
 
@@ -789,64 +841,62 @@ learns a fixed numeric label space, so renaming costs nothing and needs no retra
 
 ## 9.5 Launchers and logging
 
-Two batch files allow the tools to be started by double-clicking: `RUN_webcam.bat` and
-`RUN_report.bat`. The webcam launcher redirects output to `checks/webcam/last_run.log` and, on
-failure, prints the log and keeps the window open — added after an early run failed and the message
-disappeared with the window.
+The older `RUN_webcam.bat` and `RUN_report.bat` launch the local tools; the webcam launcher redirects
+output to `checks/webcam/last_run.log` and, on failure, prints the log and keeps the window open.
+The final presentation entry points are `run_demo_droidcam.bat` for the short guidance demo and
+`run_full_assistive_nav.bat` for the full tracking app. Both force the YOLO11s checkpoint and the
+audible `pyttsx3` backend; the full launcher adds `--distance 20 --position ahead` so the spoken
+guidance is predictable on stage.
 
 ## 9.6 Artefacts produced
 
 | Artefact | Purpose |
 |:--|:--|
-| `runs/full_yolo11n_640_v3/weights/best.pt` | Best checkpoint (epoch 57), 5.24 MB |
-| `export/full_yolo11n_640_v3_best.onnx` | Deployment model, 10.2 MB, verified |
-| `evaluation/metrics_summary.json` | Machine-readable overall and per-class metrics |
-| `evaluation/per_class_test.csv` | Per-class test results |
-| `evaluation/test/confusion_matrix_normalized.png` | Class confusion analysis |
-| `evaluation/prediction_sheet.png` | Twelve annotated test predictions |
-| `class_names.json` | Class-name mapping, all 35 IDs filled |
-| `TRAINING_REPORT.md` | Full tabular report of the run |
+| `models/YOLO11s/best.pt` | Main YOLO11s checkpoint used by the DroidCam launchers |
+| `models/YOLO11s/results.png` | Documented YOLO11s training curves |
+| `models/YOLO11s/confusion_matrix.png` | Documented YOLO11s validation confusion matrix |
+| `report/figures/yolo11s_dataset_samples.jpg` | Real validation photos with YOLO11s predictions |
+| `runs/full_yolo11n_640_v3/weights/best.pt` | YOLO11n baseline checkpoint (epoch 57) |
+| `export/full_yolo11n_640_v3_best.onnx` | Baseline ONNX export, 10.2 MB, verified |
+| `evaluation/metrics_summary.json` | Machine-readable baseline metrics |
+| `evaluation/per_class_test.csv` | Baseline per-class test results |
+| `class_names.json` | Display-name mapping for all 35 IDs |
 
-Table 12. Main project artefacts.
+Table 12. Main project artefacts, with the YOLO11s deployment set listed first.
 
 # 10. Results and Discussion
 
 ## 10.1 Headline result
 
-The completed YOLO11n model detects 35 classes at mAP@50 of 0.847 and mAP@50-95 of 0.647 on a cleaned test
-split of 795 images and 1,220 objects, with precision 0.843 and recall 0.794. Training took under two
-hours on a laptop GPU and the exported model runs at about 0.04 seconds per frame on CPU. For a
-2.61-million-parameter model these are solid numbers, and they are measured on data the model never
-saw.
+The main YOLO11s checkpoint detects 35 classes with validation precision 0.8786, recall 0.8178,
+mAP@50 0.8719 and mAP@50-95 0.6800 on 2,982 images and 4,408 boxes. It is a 9.43-million-parameter
+model that runs on the final laptop prototype without retraining. Because these are validation
+numbers used to select the checkpoint, the held-out test metrics for this checkpoint are marked
+**PENDING** until they are supplied. The YOLO11n baseline reached mAP@50-95 0.647 on the untouched
+test split, but it is not the model used in the final voice demo.
 
 ## 10.2 Training behaviour
 
-![Validation metrics and losses across the 60 training epochs. The early dip is the cost of re-initialising the classification head; the sharp improvement after epoch 50 coincides with mosaic being switched off.](<../model_training/runs/full_yolo11n_640_v3/results.png>){width=5.0in}
-
-The loss curves fall smoothly with no divergence and no upward turn at the end, the signature of a
-healthy run. Validation loss tracks training loss closely, so the model is not memorising the
-training set, and the mAP curves flatten in the last ten epochs, which is why epoch 57 was selected
-rather than epoch 60.
+Figure 6a shows the loss and metric curves recorded in `models/YOLO11s/results.png`. The run is
+stable, the cosine tail and ten-epoch mosaic close shape the final part of training, and the selected
+checkpoint is the one copied into the report figures and used by the launchers. No epoch-by-epoch
+numbers are invented from the image; the original plot is the evidence.
 
 ## 10.3 Where the model confuses classes
 
-![Normalised confusion matrix for the test split. The diagonal is correct classification, the last column is missed objects, and the last row is background predicted as an object.](<../model_training/evaluation/test/confusion_matrix_normalized.png>){width=4.4in}
-
-The diagonal is strong for most classes. The two visible weaknesses are a background column that is
-not fully dark — objects the model did not find, consistent with recall of 0.79 — and a few bright
-off-diagonal cells. Those cells are the most useful output of the evaluation, because they point at
-class pairs the annotation may not distinguish consistently: seven pairs of byte-identical images
-carry a box with a different class ID, and 177 more disagree about box geometry. When the same pixels
-are labelled differently, no model can learn a consistent boundary.
+Figure 7a shows the YOLO11s validation confusion matrix. The diagonal is strong for most numeric IDs,
+while the bright off-diagonal cells identify the class pairs that still overlap. Some of that
+confusion is inherited from the annotations: seven pairs of byte-identical images carry boxes with a
+different class ID, and 177 more disagree about box geometry. When the same pixels are labelled
+differently, no model can learn a consistent boundary.
 
 ## 10.4 Qualitative results
 
-![Twelve test images with model predictions. Each box shows the class name and confidence; the numeric IDs are listed in Appendix A.](<../model_training/evaluation/prediction_sheet.png>){width=3.7in}
-
-The prediction sheet shows what a user actually sees. Detections on clear, well-lit, reasonably large
-objects are confident and tightly boxed. Failures cluster in three situations: objects partly cut off
-at the frame edge, clusters of similar objects where non-maximum suppression merges neighbours, and
-small distant objects occupying only a few dozen pixels.
+Figure 3a shows six real validation photographs with boxes predicted by the final YOLO11s checkpoint.
+Confidences range from 0.70 to 0.92 for person, chair, bottle, trash can, sink and car. Clear,
+reasonably large objects are confidently boxed; the remaining failure modes are cut-off objects,
+similar objects close together, and small distant instances. On the live DroidCam app these detections
+are converted into spoken guidance such as **“toothbrush detected about 20 metres ahead.”**
 
 ## 10.5 How the class names were recovered
 
@@ -877,7 +927,7 @@ objects; this dataset has 35 nearly balanced classes and 1.4 objects per image, 
 here means an easier task, not a better model. The only fair comparison is another model trained on
 the same split with the same protocol.
 
-## 10.7 Interpreting the model-scale comparison
+## 10.7 YOLO11s results in context
 
 The official COCO figures in Table 5a show a clear ordering — YOLO11m above YOLO11s above YOLO11n —
 but that ordering is a prior expectation, not a result for this dataset. On the cleaned validation
@@ -904,14 +954,16 @@ low-power baseline.
 
 ## 10.8 Result figures, workflow diagrams and launchers
 
-The public README keeps six committed result figures so that the evidence can be inspected without
-rerunning training: YOLO11s training curves, validation precision–recall curve and confusion matrix
-from the `yolo11s_custom` run, followed by the corresponding three YOLO11n baseline figures in
-`report/figures/`. The newer high-accuracy YOLO11s checkpoint also ships with its own `results.png`
-and `confusion_matrix.png` in `models/YOLO11s/`. Two Mermaid diagrams in the README record the toolchain
-(prepare → train → evaluate → predict → speak) and the DroidCam voice pipeline (camera → YOLO11 with
-ByteTrack → navigation brain → `pyttsx3`). These diagrams are documentation; the measured values are
-the tables above.
+The YOLO11s training-run evidence is kept together in `report/figures/`: `yolo11s_results.png` holds
+the documented loss and metric curves, `yolo11s_val_confusion_matrix.png` the 35-class validation
+confusion matrix, and `yolo11s_dataset_samples.jpg` six real validation photographs with boxes
+predicted by the final checkpoint. The sample sheet is produced by
+`report/make_yolo11s_report_figures.py`, which reads the cleaned split and the YOLO11s weights and
+writes only the finished figures — no prediction images, validation runs or caches are added. The
+README still keeps the older `yolo11s_custom` gallery and the YOLO11n baseline for historical
+comparison, but the figures used in this report come from the final deployed run. Two Mermaid diagrams
+record the toolchain (prepare → train → evaluate → predict → speak) and the DroidCam voice pipeline
+(camera → YOLO11 with ByteTrack → navigation brain → `pyttsx3`).
 
 The final launchers are `run_demo_droidcam.bat` for the short guidance demo and
 `run_full_assistive_nav.bat` for the full tracking application. Both use `models/YOLO11s/best.pt` and
@@ -975,16 +1027,17 @@ source dataset of 16,122 images was audited without modification, and a cleaned 
 and 21,944 boxes was built with 823 duplicate images removed and 222 cross-split duplicate groups
 neutralised; hashing 32,233 files before and after proved the source unchanged.
 
-A YOLO11n detector fine-tuned for 60 epochs in 1.89 hours reached mAP@50 0.847 and mAP@50-95 0.647 on
-a test split never used for tuning, with precision 0.843 and recall 0.794, and the best checkpoint was
-exported to a verified 10.2 MB ONNX graph that runs at about 0.04 s per frame on CPU. Teammate
-checkpoints completed the three-scale validation comparison: YOLO11s reached mAP@50-95 0.6800 and
-YOLO11m 0.3170, while the teammate test metrics remain clearly marked **PENDING**. The higher
-accuracy YOLO11s checkpoint was adopted directly for the final DroidCam prototype, with an offline
-`pyttsx3` voice and a predictable presentation phrase, so no retraining was required for deployment.
-Three tools sit on top of the model — batch prediction with CSV output, a per-class contact-sheet
-generator and a live webcam demo — and every class ID now carries a name, held in a JSON file that can
-be edited without retraining.
+The main YOLO11s run reached validation precision 0.8786, recall 0.8178, mAP@50 0.8719 and
+mAP@50-95 0.6800, the best validation result in the three-scale comparison. Its checkpoint was
+adopted directly for the final DroidCam prototype, with an offline `pyttsx3` voice and a predictable
+presentation phrase, so no retraining was required for deployment. The run is documented with
+training curves, a validation confusion matrix and a sheet of real validation photographs carrying
+YOLO11s predictions. YOLO11n remains the tested low-power baseline at test mAP@50-95 0.647 with a
+verified 10.2 MB ONNX export; YOLO11m reached validation mAP@50-95 0.3170 after one epoch. Held-out
+test metrics for the YOLO11s and YOLO11m checkpoints remain clearly marked **PENDING**. Three tools
+sit on top of the model — batch prediction with CSV output, a per-class contact-sheet generator and a
+live webcam demo — and every class ID carries a display name in a JSON file that can be edited without
+retraining.
 
 Most importantly, the numbers are trustworthy within their stated limits: leakage was measured and
 removed, and the ways the result could be wrong are listed in Chapter 11 rather than hidden.
@@ -998,8 +1051,8 @@ than an object the user cares about.
 
 After that, the experiments with the best value per hour of compute are: resolve the 7 class conflicts
 and the 15 duplicate-stem pairs and re-check whether the weak classes improve without any change to
-the model; train at 960 × 960 to attack the small-object failures behind the recall of 0.794;
-evaluate the teammate YOLO11s and YOLO11m checkpoints once on the held-out test split so the
+the model; train at 960 × 960 to attack the small-object failures behind the baseline recall of
+0.794; evaluate the YOLO11s and YOLO11m checkpoints once on the held-out test split so the
 **PENDING** cells in Section 7.5 can be filled; complete more than one epoch for YOLO11m before
 judging the medium architecture; and run a second and third seed to establish how much of the
 difference between classes is real rather than noise. Optional fine-tuning from the YOLO11s

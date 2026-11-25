@@ -1007,12 +1007,14 @@ The written report is kept in `report/`:
 | `report/PROJECT_REPORT_UPDATED.md` | Editable source with 2024–2026 references |
 | `report/Project_Report_Updated.docx` | A4 / Times New Roman version with page numbers |
 | `report/Project_Report_Updated.pdf` | PDF export of the updated report |
-| `report/figures/` | Class-index, class-distribution and YOLO11n result figures |
+| `report/figures/` | YOLO11s training-run figures, class-index and YOLO11n baseline figures |
+| `report/make_yolo11s_report_figures.py` | Rebuilds the YOLO11s figures from the final checkpoint and validation split |
 
-The updated report adds recent research, completed YOLO11n/s/m validation
-results, the final DroidCam voice-prototype notes, and collaborative-training
-details. Test metrics that were not supplied are marked **PENDING** instead of
-being invented.
+The updated report is organised around the final YOLO11s training run. It adds
+YOLO11s training curves, a validation confusion matrix and a sheet of real
+validation photographs with predicted boxes, plus recent research, the baseline
+comparison and the final DroidCam voice-prototype notes. Test metrics that were
+not supplied are marked **PENDING** instead of being invented.
 
 ---
 
