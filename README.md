@@ -696,11 +696,17 @@ If you prefer not to type commands, double-click:
 | `run_demo_image.bat "path\to\person.jpg"` | Starts the demo on one image |
 | `run_demo_phone.bat` | Prompts for a phone-camera stream URL |
 | `run_demo_droidcam.bat` | Simple DroidCam demo: detection → guidance → speech |
-| `run_full_assistive_nav.bat` | Full DroidCam app: tracking, distance and speech |
+| `run_full_assistive_nav.bat` | Full DroidCam app: tracking, presentation voice and speech |
 
 All launchers now use the higher-accuracy `models/YOLO11s/best.pt` checkpoint
 by default, so the prototype works immediately without retraining. Pass another
 `--weights` path on the command line to override it.
+
+`run_full_assistive_nav.bat` also passes `--distance 20 --position ahead`, so
+the spoken sentence is predictable for a presentation:
+`"<object> detected about 20 metres ahead."` The on-screen estimate stays
+honest; only the spoken guidance is forced. Remove those two arguments from the
+.bat file to return to camera-based distance and direction.
 
 Press **q** in the preview window to quit.
 

@@ -109,6 +109,8 @@ class AppConfig:
     left_ratio: float = 1.0 / 3.0
     right_ratio: float = 2.0 / 3.0
     distance_enabled: bool = True
+    forced_distance_m: float | None = None
+    position_mode: str = "auto"
     object_heights: Path = DEFAULT_HEIGHTS_PATH
     vertical_fov: float = 60.0
     voice_enabled: bool = True
@@ -352,15 +354,25 @@ class AssistiveNavApp:
         self._check_feed(frame)
         detections, latency_ms = self.detector.detect(frame)
 
-        # 1. raw camera-relative zone for every box
+        # 1. raw camera-relative zone for every box. --position can force a
+        # predictable spoken direction for presentations.
+        forced_direction = None
+        if self.cfg.position_mode != "auto":
+            # CLI says "ahead" because that is what the user hears; the enum
+            # stores the centre zone as "center".
+            zone = "center" if self.cfg.position_mode == "ahead" else self.cfg.position_mode
+            forced_direction = Direction(zone)
         for det in detections:
-            det.direction = self.estimator.estimate(det.box, width)
+            det.direction = forced_direction or self.estimator.estimate(det.box, width)
 
-        # 1b. rough distance from box height ("about N metres", never exact)
-        if self.distance is not None:
+        # 1b. rough distance from box height ("about N metres", never exact).
+        # --distance overrides the estimate so demos can say "about 20 metres".
+        if self.distance is not None or self.cfg.forced_distance_m is not None:
             for det in detections:
-                det.distance_m = self.distance.estimate(
-                    det.class_id, det.box, height, det.name
+                det.distance_m = (
+                    self.cfg.forced_distance_m
+                    if self.cfg.forced_distance_m is not None
+                    else self.distance.estimate(det.class_id, det.box, height, det.name)
                 )
 
         # 2. identity + lifecycle events (ByteTrack IDs, or IoU fallback IDs)
@@ -375,9 +387,15 @@ class AssistiveNavApp:
         events.extend(self.tracker.note_directions(detections))
 
         # 4b. attach the same estimate to each event so speech can include it
-        if self.distance is not None:
+        if forced_direction is not None:
             for event in events:
-                if event.box is not None:
+                event.direction = forced_direction
+
+        if self.distance is not None or self.cfg.forced_distance_m is not None:
+            for event in events:
+                if self.cfg.forced_distance_m is not None:
+                    event.distance_m = self.cfg.forced_distance_m
+                elif event.box is not None:
                     event.distance_m = self.distance.estimate(
                         event.class_id, event.box, height, event.name
                     )
@@ -694,6 +712,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not estimate or speak distance",
     )
+    parser.add_argument(
+        "--distance",
+        type=float,
+        default=None,
+        help="force the spoken distance in metres for presentations",
+    )
+    parser.add_argument(
+        "--position",
+        choices=["auto", "ahead", "left", "right"],
+        default="auto",
+        help="force the spoken direction for presentations",
+    )
 
     voice = parser.add_argument_group("voice")
     voice.add_argument("--no-voice", action="store_true", help="start with speech disabled")
@@ -740,7 +770,9 @@ def config_from_args(args: argparse.Namespace) -> AppConfig:
         stable_frames=args.stable_frames,
         left_ratio=args.left_ratio,
         right_ratio=args.right_ratio,
-        distance_enabled=not args.no_distance,
+        distance_enabled=not args.no_distance or args.distance is not None,
+        forced_distance_m=args.distance,
+        position_mode=args.position,
         object_heights=args.object_heights,
         vertical_fov=args.vertical_fov,
         voice_enabled=not args.no_voice,
