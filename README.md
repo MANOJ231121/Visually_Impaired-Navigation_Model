@@ -21,6 +21,7 @@ automatically.
 
 - [Features](#features)
 - [Project structure](#project-structure)
+- [Toolchain workflow](#toolchain-workflow)
 - [Dataset](#dataset)
 - [Installation](#installation)
 - [Training](#training)
@@ -34,6 +35,7 @@ automatically.
 - [Class names](#class-names)
 - [Trained YOLO11s results](#trained-yolo11s-results)
 - [Baseline results](#baseline-results)
+- [Result images](#result-images)
 - [Project report](#project-report)
 - [Troubleshooting](#troubleshooting)
 - [Provenance and assumptions](#provenance-and-assumptions)
@@ -95,6 +97,24 @@ evaluation/results/<run>/     # evaluation metrics and plots
 prediction/outputs/<name>/    # annotated predictions
 model_training/dataset/       # extracted dataset (not committed)
 ```
+
+---
+
+## Toolchain workflow
+
+```mermaid
+flowchart LR
+    A[35-class YOLO dataset] --> B[prepare_dataset.py / verify_dataset.py]
+    B --> C[train_yolo11n.py / train_yolo11s.py]
+    C --> D[Ultralytics training runs]
+    D --> E[evaluate.py: val + test metrics]
+    E --> F[Prediction and result figures]
+    F --> G[live_guide.py: guidance + pyttsx3 speech]
+```
+
+The same trained checkpoint can be used for offline prediction, evaluation
+figures, and the DroidCam voice demo. The full Assistive Navigation app adds
+tracking and approximate distance on top of this flow.
 
 ---
 
@@ -579,14 +599,12 @@ Person, 20 metres ahead, moving left.
 
 ### How it works
 
-```text
-camera / image
-    ↓
-YOLO11 + ByteTrack  →  class name, box, confidence, track ID
-    ↓
-navigation brain    →  position, distance, motion → sentence
-    ↓
-pyttsx3             →  spoken guidance (offline, no internet needed)
+```mermaid
+flowchart TD
+    A[DroidCam / webcam / image] --> B[YOLO11 + ByteTrack]
+    B --> C[Class name, box, confidence, track ID]
+    C --> D[Navigation brain: position, distance, motion]
+    D --> E[pyttsx3: spoken guidance, offline]
 ```
 
 The brain uses simple, predictable rules:
@@ -907,6 +925,46 @@ slightly different numbers.
 
 ---
 
+## Result images
+
+The figures below are committed to the repository, so they render directly on
+GitHub. They match the metrics tables above: YOLO11s figures come from the
+`yolo11s_custom` run, and YOLO11n figures come from the original
+`full_yolo11n_640_v3` baseline run.
+
+### YOLO11s results
+
+![YOLO11s training curves](runs/detect/yolo11s_custom/results.png)
+
+*Figure 1 — YOLO11s training loss and metric curves from `runs/detect/yolo11s_custom/results.png`.*
+
+![YOLO11s validation precision–recall curve](evaluation/results/yolo11s_custom/val/BoxPR_curve.png)
+
+*Figure 2 — YOLO11s validation precision–recall curve.*
+
+![YOLO11s validation confusion matrix](evaluation/results/yolo11s_custom/val/confusion_matrix.png)
+
+*Figure 3 — YOLO11s validation confusion matrix for the 35 numeric class IDs.*
+
+> A newer high-accuracy YOLO11s checkpoint is documented separately in
+> [`models/YOLO11s/README.md`](models/YOLO11s/README.md).
+
+### YOLO11n baseline results
+
+![YOLO11n training curves](report/figures/yolo11n_results.png)
+
+*Figure 4 — YOLO11n training loss and metric curves from the original baseline run.*
+
+![YOLO11n validation precision–recall curve](report/figures/yolo11n_val_PR_curve.png)
+
+*Figure 5 — YOLO11n validation precision–recall curve.*
+
+![YOLO11n validation confusion matrix](report/figures/yolo11n_val_confusion_matrix.png)
+
+*Figure 6 — YOLO11n validation confusion matrix for the 35 numeric class IDs.*
+
+---
+
 ## Project report
 
 The written report is kept in `report/`:
@@ -916,7 +974,7 @@ The written report is kept in `report/`:
 | `report/PROJECT_REPORT_UPDATED.md` | Editable source with 2024–2026 references |
 | `report/Project_Report_Updated.docx` | A4 / Times New Roman version with page numbers |
 | `report/Project_Report_Updated.pdf` | PDF export of the updated report |
-| `report/figures/` | Class-index and class-distribution figures |
+| `report/figures/` | Class-index, class-distribution and YOLO11n result figures |
 
 The updated report adds recent research, a YOLO11n/s/m accuracy comparison,
 and collaborative-training notes. Metrics that were not supplied are marked
