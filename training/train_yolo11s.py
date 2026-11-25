@@ -51,23 +51,26 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA = PROJECT_ROOT / "data.yaml"
-DEFAULT_PROJECT = PROJECT_ROOT / "runs" / "train"
+DEFAULT_PROJECT = PROJECT_ROOT / "runs" / "detect"
+
+try:
+    import torch
+    AUTO_DEVICE = "0" if torch.cuda.is_available() else "cpu"
+except ImportError:
+    AUTO_DEVICE = "cpu"
 
 # ---------------------------------------------------------------------------
 # Training configuration
 # ---------------------------------------------------------------------------
-# Reused from the original YOLO11n experiment (full_yolo11n_640_v3).
-# Edit these values to create a new baseline, or override the common ones
-# from the command line. Comments explain the important parameters.
 
 TRAIN_CONFIG: dict[str, object] = {
     # --- Core schedule -----------------------------------------------------
-    "epochs": 60,           # maximum number of passes over the training set
+    "epochs": 100,          # maximum number of passes over the training set
     "imgsz": 640,           # square input resolution used for train + val
-    "batch": 16,            # images per batch (lower this if you run out of VRAM)
-    "patience": 15,         # early-stop after N epochs without val improvement
-    "workers": 2,           # dataloader worker processes (Windows-friendly)
-    "cache": False,         # cache decoded images in RAM/disk (needs lots of RAM)
+    "batch": 8,             # images per batch (safe for available memory, or -1 for auto)
+    "patience": 20,         # early-stop after N epochs without val improvement
+    "workers": 0,           # dataloader worker processes (0 is safest for Windows multiprocessing)
+    "cache": False,         # cache decoded images in RAM/disk
     "fraction": 1.0,        # use 100% of the training split
     # --- Reproducibility ---------------------------------------------------
     "seed": 0,              # fixed seed for Python/NumPy/torch/Ultralytics
@@ -109,8 +112,8 @@ TRAIN_CONFIG: dict[str, object] = {
     "val": True,            # run validation every epoch
     "save": True,
     "single_cls": False,    # keep all 35 classes separate
-    "rect": False,          # rectangular training is off (matches original)
-    "cos_lr": False,        # cosine LR schedule is off (matches original)
+    "rect": False,          # rectangular training is off
+    "cos_lr": False,        # cosine LR schedule is off
     "exist_ok": False,      # never overwrite an existing run directory
 }
 
@@ -125,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="yolo11s.pt",
         help=(
             "Pretrained checkpoint or Ultralytics model name. Any detection "
-            "model works, e.g. yolo11n.pt, yolo11m.pt, yolo11l.pt, yolo11x.pt."
+            "model works, e.g. yolo11n.pt, yolo11s.pt, yolo11m.pt."
         ),
     )
     parser.add_argument(
@@ -149,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--batch",
         type=int,
         default=TRAIN_CONFIG["batch"],
-        help="Batch size. Lower it if you run out of GPU memory.",
+        help="Batch size. Use -1 for auto-batch or positive integer (e.g. 8).",
     )
     parser.add_argument(
         "--patience",
@@ -159,17 +162,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--device",
-        default="0",
+        default=AUTO_DEVICE,
         help=(
-            "Compute device: '0' for the first GPU, '0,1' for two GPUs, "
-            "'cpu' for CPU, or 'mps' for Apple Silicon."
+            "Compute device: '0' for the first GPU, 'cpu' for CPU, or 'auto'."
         ),
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=TRAIN_CONFIG["workers"],
-        help="Dataloader worker processes. Use 0 if you hit Windows issues.",
+        help="Dataloader worker processes. 0 avoids Windows multiprocessing issues.",
     )
     parser.add_argument(
         "--seed",
@@ -184,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--name",
-        default="yolo11s_640",
+        default="yolo11s_custom",
         help=(
             "Run name. Ultralytics appends a numeric suffix instead of "
             "overwriting an existing run."
@@ -287,13 +289,23 @@ def main() -> int:
 
     project_dir = Path(args.project).expanduser().resolve()
 
+    device = args.device
+    if device == "auto":
+        device = AUTO_DEVICE
+    elif str(device) in ("0", "cuda", "cuda:0") and not (hasattr(torch, "cuda") and torch.cuda.is_available()):
+        print(
+            "NOTICE: CUDA is not active in current PyTorch build. Automatically falling back to CPU.",
+            file=sys.stderr,
+        )
+        device = "cpu"
+
     overrides = dict(TRAIN_CONFIG)
     overrides.update(
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
         patience=args.patience,
-        device=args.device,
+        device=device,
         workers=args.workers,
         seed=args.seed,
         fraction=args.fraction,

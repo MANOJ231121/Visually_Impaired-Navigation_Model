@@ -41,9 +41,19 @@ data/
 # ---------------------------------------------------------------------------
 # Training / evaluation / prediction outputs
 # ---------------------------------------------------------------------------
-runs/
-evaluation/results/
-prediction/outputs/
+runs/*
+!runs/detect/
+runs/detect/*
+!runs/detect/yolo11s_custom/
+!runs/detect/yolo11s_custom/**
+evaluation/results/*
+!evaluation/results/yolo11s_custom/
+!evaluation/results/yolo11s_custom/**
+prediction/outputs/*
+!prediction/outputs/sample_images_output/
+!prediction/outputs/sample_images_output/**
+!prediction/outputs/sample_video_output/
+!prediction/outputs/sample_video_output/**
 predictions/
 outputs/
 
@@ -51,6 +61,10 @@ outputs/
 # Model weights and exported models
 # ---------------------------------------------------------------------------
 *.pt
+!models/**
+!models/**/*.pt
+!runs/detect/yolo11s_custom/weights/*.pt
+!yolo11s.pt
 *.pth
 *.onnx
 *.engine
