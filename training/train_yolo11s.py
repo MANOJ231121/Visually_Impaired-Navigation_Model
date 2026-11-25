@@ -217,6 +217,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fraction of the training split to use (0.0-1.0).",
     )
     parser.add_argument(
+        "--lr0",
+        type=float,
+        default=TRAIN_CONFIG["lr0"],
+        help="Initial learning rate. Lower values are safer when fine-tuning.",
+    )
+    parser.add_argument(
+        "--cos-lr",
+        action="store_true",
+        help="Use cosine learning-rate decay.",
+    )
+    parser.add_argument(
         "--exist-ok",
         action="store_true",
         help="Allow writing into an existing run directory (off by default).",
@@ -310,6 +321,8 @@ def main() -> int:
         seed=args.seed,
         fraction=args.fraction,
         cache=args.cache,
+        lr0=args.lr0,
+        cos_lr=args.cos_lr,
         amp=not args.no_amp,
         resume=args.resume,
         project=str(project_dir),

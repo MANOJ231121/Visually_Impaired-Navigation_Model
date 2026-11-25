@@ -356,6 +356,28 @@ python training/train_yolo11n.py \
   --resume
 ```
 
+### Fine-tune from the trained YOLO11s checkpoint
+
+To continue from the higher-accuracy checkpoint committed at
+`models/YOLO11s/best.pt`, start from a smaller learning rate. `--cos-lr`
+matches the cosine decay used by that checkpoint:
+
+```bash
+python training/train_yolo11s.py \
+  --model models/YOLO11s/best.pt \
+  --name yolo11s_friend_finetune \
+  --epochs 20 \
+  --batch 8 \
+  --imgsz 640 \
+  --patience 10 \
+  --lr0 0.001 \
+  --cos-lr \
+  --device 0
+```
+
+This writes to `runs/detect/yolo11s_friend_finetune/` and leaves the original
+`models/YOLO11s/best.pt` unchanged.
+
 ### Useful overrides
 
 ```bash
