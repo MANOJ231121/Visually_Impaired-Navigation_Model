@@ -10,8 +10,8 @@ echo.
 set /P "URL=Paste your phone stream URL: "
 
 echo.
-echo Starting demo. Press q in the preview window to quit.
-python assistive\live_guide.py --source "%URL%" --motion-mode left --position-mode ahead
+echo Starting demo with YOLO11s. Press q in the preview window to quit.
+python assistive\live_guide.py --weights models\YOLO11s\best.pt --names class_names.json --source "%URL%" --motion-mode left --position-mode ahead
 if errorlevel 1 echo.
 if errorlevel 1 echo Demo failed. Check that the phone and PC are on the same Wi-Fi.
 pause
